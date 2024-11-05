@@ -11,10 +11,10 @@ import { PoolEventHandler } from '../src/pool_event_handler.js';
 import { updateUser } from '../src/user.js';
 import { APP_CONFIG, AppConfig } from '../src/utils/config.js';
 import { AuctioneerDatabase, AuctionEntry, AuctionType } from '../src/utils/db.js';
-import { SorobanHelper } from '../src/utils/soroban_helper.js';
-import { inMemoryAuctioneerDb, mockedPool } from './helpers/mocks.js';
 import { logger } from '../src/utils/logger.js';
 import { deadletterEvent, sendEvent } from '../src/utils/messages.js';
+import { SorobanHelper } from '../src/utils/soroban_helper.js';
+import { inMemoryAuctioneerDb, mockedPool } from './helpers/mocks.js';
 
 jest.mock('../src/user.js');
 jest.mock('../src/utils/soroban_helper.js');
@@ -143,14 +143,14 @@ describe('poolEventHandler', () => {
         },
       },
     };
-    mockedSorobanHelper.loadPool
-      .mockRejectedValueOnce(new Error('Temporary error'))
-      .mockResolvedValue(mockedPool);
+    let error = new Error('Temporary error');
+    mockedSorobanHelper.loadPool.mockRejectedValueOnce(error).mockResolvedValue(mockedPool);
     await poolEventHandler.processEventWithRetryAndDeadLetter(poolEvent);
 
     expect(mockedSorobanHelper.loadPool).toHaveBeenCalledTimes(2);
     expect(logger.warn).toHaveBeenCalledWith(
-      `Error processing event. ${poolEvent.event.id} Error: Error: Temporary error`
+      `Error processing event. ${poolEvent.event.id}.`,
+      error
     );
     expect(logger.info).toHaveBeenCalledWith(`Successfully processed event. ${poolEvent.event.id}`);
   });
@@ -203,9 +203,11 @@ describe('poolEventHandler', () => {
       },
     };
 
-    mockedSorobanHelper.loadPool.mockRejectedValue(new Error('Permanent error'));
+    let error = new Error('Permanent error');
+    mockedSorobanHelper.loadPool.mockRejectedValue(error);
+    let mocked_error = new Error('Mocked error');
     const mockDeadLetterEvent = deadletterEvent as jest.MockedFunction<typeof deadletterEvent>;
-    mockDeadLetterEvent.mockRejectedValue(new Error('Mocked error'));
+    mockDeadLetterEvent.mockRejectedValue(mocked_error);
 
     await poolEventHandler.processEventWithRetryAndDeadLetter(poolEvent);
 
@@ -213,7 +215,8 @@ describe('poolEventHandler', () => {
     expect(deadletterEvent).toHaveBeenCalledWith(poolEvent);
     expect(logger.error).toHaveBeenNthCalledWith(
       1,
-      `Error sending event to dead letter queue. Error: Error: Mocked error`
+      `Error sending event to dead letter queue.`,
+      mocked_error
     );
   });
 

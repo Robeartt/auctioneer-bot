@@ -52,7 +52,7 @@ export class WorkHandler {
           await deadletterEvent(appEvent);
           return false;
         }
-        logger.warn(`Error processing event. Error: ${error}`);
+        logger.warn(`Error processing event.`, error);
         logger.warn(
           `Retry ${retries + 1}/${MAX_RETRIES}. Waiting ${RETRY_DELAY}ms before next attempt.`
         );

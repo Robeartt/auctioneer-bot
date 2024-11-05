@@ -1,4 +1,5 @@
 import { PoolEventType } from '@blend-capital/blend-sdk';
+import { ChildProcess } from 'child_process';
 import { canFillerBid } from './auction.js';
 import { EventType, PoolEventEvent } from './events.js';
 import { updateUser } from './user.js';
@@ -10,7 +11,6 @@ import { deadletterEvent, sendEvent } from './utils/messages.js';
 import { sendSlackNotification } from './utils/slack_notifier.js';
 import { SorobanHelper } from './utils/soroban_helper.js';
 import { WorkSubmission } from './work_submitter.js';
-import { ChildProcess } from 'child_process';
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 200;
 
@@ -43,17 +43,17 @@ export class PoolEventHandler {
         await this.handlePoolEvent(poolEvent);
         logger.info(`Successfully processed event. ${poolEvent.event.id}`);
         return;
-      } catch (error) {
+      } catch (error: any) {
         retries++;
         if (retries >= MAX_RETRIES) {
           try {
             await deadletterEvent(poolEvent);
-          } catch (error) {
-            logger.error(`Error sending event to dead letter queue. Error: ${error}`);
+          } catch (error: any) {
+            logger.error(`Error sending event to dead letter queue.`, error);
           }
           return;
         }
-        logger.warn(`Error processing event. ${poolEvent.event.id} Error: ${error}`);
+        logger.warn(`Error processing event. ${poolEvent.event.id}.`, error);
         logger.warn(
           `Retry ${retries + 1}/${MAX_RETRIES}. Waiting ${RETRY_DELAY}ms before next attempt.`
         );

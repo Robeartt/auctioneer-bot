@@ -8,7 +8,7 @@ import {
 } from './auction.js';
 import { APP_CONFIG, Filler } from './utils/config.js';
 import { AuctioneerDatabase, AuctionEntry, AuctionType } from './utils/db.js';
-import { stringify } from './utils/json.js';
+import { serializeError, stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
 import { sendSlackNotification } from './utils/slack_notifier.js';
 import { SorobanHelper } from './utils/soroban_helper.js';
@@ -160,9 +160,11 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         `Error submitting fill for auction\n` +
         `Type: ${auctionBid.auctionEntry.auction_type}\n` +
         `User: ${auctionBid.auctionEntry.user_id}\n` +
-        `Filler: ${auctionBid.filler.name}\nError: ${e}\n`;
-      await sendSlackNotification(`<!channel>` + logMessage);
-      logger.error(logMessage);
+        `Filler: ${auctionBid.filler.name}`;
+      await sendSlackNotification(
+        `<!channel> ` + logMessage + `\nError: ${stringify(serializeError(e))}`
+      );
+      logger.error(logMessage, e);
       return false;
     }
   }
