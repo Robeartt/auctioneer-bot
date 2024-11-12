@@ -6,6 +6,7 @@ import {
   calculateBlockFillAndPercent,
   scaleAuction,
 } from './auction.js';
+import { managePositions } from './filler.js';
 import { APP_CONFIG, Filler } from './utils/config.js';
 import { AuctioneerDatabase, AuctionEntry, AuctionType } from './utils/db.js';
 import { serializeError, stringify } from './utils/json.js';
@@ -104,8 +105,12 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       );
 
       if (currLedger + 1 >= fillCalculation.fillBlock) {
-        let scaledAuction = scaleAuction(auctionData, currLedger, fillCalculation.fillPercent);
-        const requests = await buildFillRequests(
+        const scaledAuction = scaleAuction(
+          auctionData,
+          currLedger + 1,
+          fillCalculation.fillPercent
+        );
+        const request = await buildFillRequests(
           auctionBid,
           scaledAuction,
           fillCalculation.fillPercent,
@@ -118,7 +123,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
             from: auctionBid.auctionEntry.filler,
             spender: auctionBid.auctionEntry.filler,
             to: auctionBid.auctionEntry.filler,
-            requests: requests,
+            requests: request,
           }),
           auctionBid.filler.keypair
         );
@@ -152,6 +157,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
           fill_block: result.ledger,
           timestamp: result.latestLedgerCloseTime,
         });
+        this.addSubmission({ type: BidderSubmissionType.UNWIND, filler: auctionBid.filler }, 2);
         return true;
       }
       return true;
@@ -170,7 +176,65 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
   }
 
   async submitUnwind(sorobanHelper: SorobanHelper, fillerUnwind: FillerUnwind): Promise<boolean> {
-    logger.warn('Filler unwind is not implemented.');
+    const filler_pubkey = fillerUnwind.filler.keypair.publicKey();
+    const filler_tokens = [
+      ...new Set([
+        fillerUnwind.filler.primaryAsset,
+        ...fillerUnwind.filler.supportedBid,
+        ...fillerUnwind.filler.supportedLot,
+      ]),
+    ];
+    const pool = await sorobanHelper.loadPool();
+    const poolOracle = await sorobanHelper.loadPoolOracle();
+    const filler_user = await sorobanHelper.loadUser(filler_pubkey);
+    const filler_balances = await sorobanHelper.loadBalances(filler_pubkey, filler_tokens);
+
+    // Unwind the filler one step at a time. If the filler is not unwound, place another `FillerUnwind` event on the submission queue.
+    // To unwind the filler, the following actions will be taken in order:
+    // 1. Unwind the filler's pool position by paying off all liabilities with current balances and withdrawing all possible collateral,
+    //    down to either the min_collateral or min_health_factor.
+    // TODO: Add trading functionality for 2, 3
+    // 2. If no positions can be modified, and the filler still has outstanding liabilities, attempt to purchase the liability tokens
+    //    with USDC.
+    // 3. If there are no liabilities, attempt to sell un-needed tokens for USDC
+    // 4. If this case is reached, stop sending unwind events for the filler.
+
+    // 1
+    let requests = managePositions(
+      fillerUnwind.filler,
+      pool,
+      poolOracle,
+      filler_user.positions,
+      filler_balances
+    );
+    if (requests.length > 0) {
+      // some positions to manage - submit the transaction
+      const pool_contract = new PoolContract(APP_CONFIG.poolAddress);
+      const result = await sorobanHelper.submitTransaction(
+        pool_contract.submit({
+          from: filler_pubkey,
+          spender: filler_pubkey,
+          to: filler_pubkey,
+          requests: requests,
+        }),
+        fillerUnwind.filler.keypair
+      );
+      logger.info(
+        `Successful unwind for filler: ${fillerUnwind.filler.name}\n` +
+          `Ledger: ${result.ledger}\n` +
+          `Hash: ${result.txHash}`
+      );
+      this.addSubmission({ type: BidderSubmissionType.UNWIND, filler: fillerUnwind.filler }, 2);
+      return true;
+    }
+
+    if (filler_user.positions.liabilities.size > 0) {
+      const logMessage =
+        `Filler has liabilities that cannot be removed\n` +
+        `Filler: ${fillerUnwind.filler.name}\n` +
+        `Positions: ${stringify(filler_user.positions, 2)}`;
+      await sendSlackNotification(logMessage);
+    }
     return true;
   }
 

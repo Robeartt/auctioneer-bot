@@ -176,11 +176,11 @@ export function scaleAuction(
 }
 
 /**
- * Build requests to fill the auction and clear the filler's position.
+ * Build requests to fill the auction and repay the liabilities.
  * @param auctionBid - The auction to build the fill requests for
- * @param auctionData - The auction data to build the fill requests for
+ * @param auctionData - The scaled auction data to build the fill requests for
  * @param fillPercent - The percent to fill the auction
- * @param sorobanHelper - The soroban helper to use for loading ledger data
+ * @param sorobanHelper - The soroban helper to use for the calculation
  * @returns
  */
 export async function buildFillRequests(
@@ -208,82 +208,46 @@ export async function buildFillRequests(
     amount: BigInt(fillPercent),
   });
 
-  const poolOracle = await sorobanHelper.loadPoolOracle();
-  // Interest auctions transfer underlying assets
-  if (auctionBid.auctionEntry.auction_type !== AuctionType.Interest) {
-    let { estimate: fillerPositionEstimates, user: fillerPositions } =
-      await sorobanHelper.loadUserPositionEstimate(auctionBid.auctionEntry.filler);
-    const reserves = (await sorobanHelper.loadPool()).reserves;
+  if (auctionBid.auctionEntry.auction_type === AuctionType.Interest) {
+    return fillRequests;
+  }
 
-    for (const [assetId, amount] of auctionData.bid) {
-      const oraclePrice = poolOracle.getPriceFloat(assetId);
-      // Skip assets without an oracle price
-      // TODO: determine what to do with assets without an oracle price
-      // (e.g. just repay debt if wallet balance is sufficient or check if asset is in price db)
-      if (oraclePrice === undefined) {
-        continue;
-      }
-      const reserve = reserves.get(assetId);
-      let fillerBalance = await sorobanHelper.simBalance(assetId, auctionBid.auctionEntry.filler);
-
-      // Ensure the filler has XLM to pay for the transaction
+  // attempt to repay any liabilities the filler has took on from the bids
+  // if this fails for some reason, still continue with the fill
+  try {
+    for (const [assetId] of auctionData.bid) {
+      let tokenBalance = await sorobanHelper.simBalance(
+        assetId,
+        auctionBid.filler.keypair.publicKey()
+      );
       if (assetId === Asset.native().contractId(APP_CONFIG.networkPassphrase)) {
-        fillerBalance =
-          fillerBalance > FixedMath.toFixed(100, 7)
-            ? fillerBalance - FixedMath.toFixed(100, 7)
-            : 0n;
+        tokenBalance =
+          tokenBalance > FixedMath.toFixed(50, 7) ? tokenBalance - FixedMath.toFixed(50, 7) : 0n;
       }
-      if (reserve !== undefined) {
-        const liabilityLeft = amount - fillerBalance > 0 ? amount - fillerBalance : 0n;
-        const effectiveLiabilityIncrease =
-          reserve.toEffectiveAssetFromDTokenFloat(liabilityLeft) * oraclePrice;
-        fillerPositionEstimates.totalEffectiveLiabilities += effectiveLiabilityIncrease;
-        if (fillerBalance > 0) {
-          fillRequests.push({
-            request_type: RequestType.Repay,
-            address: assetId,
-            amount: BigInt(fillerBalance),
-          });
-        }
+      if (tokenBalance > 0) {
+        fillRequests.push({
+          request_type: RequestType.Repay,
+          address: assetId,
+          amount: BigInt(tokenBalance),
+        });
       }
     }
-
-    for (const [assetId, amount] of auctionData.lot) {
-      const reserve = reserves.get(assetId);
-      const oraclePrice = poolOracle.getPriceFloat(assetId);
-      if (
-        reserve !== undefined &&
-        !fillerPositions.positions.collateral.has(reserve.config.index) &&
-        oraclePrice !== undefined
-      ) {
-        const effectiveCollateralIncrease =
-          reserve.toEffectiveAssetFromBTokenFloat(amount) * oraclePrice;
-        const newHF =
-          fillerPositionEstimates.totalEffectiveCollateral /
-          fillerPositionEstimates.totalEffectiveLiabilities;
-        if (newHF > auctionBid.filler.minHealthFactor) {
-          fillRequests.push({
-            request_type: RequestType.WithdrawCollateral,
-            address: assetId,
-            // Use I64 max value to withdraw all collateral
-            amount: BigInt('9223372036854775807'),
-          });
-        } else {
-          fillerPositionEstimates.totalEffectiveCollateral += effectiveCollateralIncrease;
-        }
-      }
-    }
+  } catch (e: any) {
+    logger.error(`Error attempting to repay dToken bids for filler: ${auctionBid.filler.name}`, e);
   }
   return fillRequests;
 }
 
 /**
  * Calculate the effective collateral, lot value, effective liabilities, and bid value for an auction.
+ *
+ * If this function encounters an error, it will return 0 for all values.
+ *
  * @param auctionType - The type of auction to calculate the values for
  * @param auctionData - The auction data to calculate the values for
  * @param sorobanHelper - A helper to use for loading ledger data
  * @param db - The database to use for fetching asset prices
- * @returns
+ * @returns The calculated values, or 0 for all values if it is unable to calculate them
  */
 export async function calculateAuctionValue(
   auctionType: AuctionType,
@@ -291,73 +255,78 @@ export async function calculateAuctionValue(
   sorobanHelper: SorobanHelper,
   db: AuctioneerDatabase
 ): Promise<AuctionValue> {
-  let effectiveCollateral = 0;
-  let lotValue = 0;
-  let effectiveLiabilities = 0;
-  let bidValue = 0;
-  const reserves = (await sorobanHelper.loadPool()).reserves;
-  const poolOracle = await sorobanHelper.loadPoolOracle();
-  for (const [assetId, amount] of auctionData.lot) {
-    const reserve = reserves.get(assetId);
-    if (reserve !== undefined) {
-      const oraclePrice = poolOracle.getPriceFloat(assetId);
-      const dbPrice = db.getPriceEntry(assetId)?.price;
-      if (oraclePrice === undefined) {
-        throw new Error(`Failed to get oracle price for asset: ${assetId}`);
-      }
+  try {
+    let effectiveCollateral = 0;
+    let lotValue = 0;
+    let effectiveLiabilities = 0;
+    let bidValue = 0;
+    const reserves = (await sorobanHelper.loadPool()).reserves;
+    const poolOracle = await sorobanHelper.loadPoolOracle();
+    for (const [assetId, amount] of auctionData.lot) {
+      const reserve = reserves.get(assetId);
+      if (reserve !== undefined) {
+        const oraclePrice = poolOracle.getPriceFloat(assetId);
+        const dbPrice = db.getPriceEntry(assetId)?.price;
+        if (oraclePrice === undefined) {
+          throw new Error(`Failed to get oracle price for asset: ${assetId}`);
+        }
 
-      if (auctionType !== AuctionType.Interest) {
-        effectiveCollateral += reserve.toEffectiveAssetFromBTokenFloat(amount) * oraclePrice;
-        // TODO: change this to use the price in the db
-        lotValue += reserve.toAssetFromBTokenFloat(amount) * (dbPrice ?? oraclePrice);
-      }
-      // Interest auctions are in underlying assets
-      else {
-        lotValue +=
-          (Number(amount) / 10 ** reserve.tokenMetadata.decimals) * (dbPrice ?? oraclePrice);
-      }
-    } else if (assetId === APP_CONFIG.backstopTokenAddress) {
-      // Simulate singled sided withdraw to USDC
-      const lpTokenValue = await sorobanHelper.simLPTokenToUSDC(amount);
-      if (lpTokenValue !== undefined) {
-        lotValue += FixedMath.toFloat(lpTokenValue, 7);
-      }
-      // Approximate the value of the comet tokens if simulation fails
-      else {
-        const backstopToken = await sorobanHelper.loadBackstopToken();
-        lotValue += FixedMath.toFloat(amount, 7) * backstopToken.lpTokenPrice;
-      }
-    } else {
-      throw new Error(`Failed to value lot asset: ${assetId}`);
-    }
-  }
-
-  for (const [assetId, amount] of auctionData.bid) {
-    const reserve = reserves.get(assetId);
-    const dbPrice = db.getPriceEntry(assetId)?.price;
-
-    if (reserve !== undefined) {
-      const oraclePrice = poolOracle.getPriceFloat(assetId);
-      if (oraclePrice === undefined) {
-        throw new Error(`Failed to get oracle price for asset: ${assetId}`);
-      }
-
-      effectiveLiabilities += reserve.toEffectiveAssetFromDTokenFloat(amount) * oraclePrice;
-      // TODO: change this to use the price in the db
-      bidValue += reserve.toAssetFromDTokenFloat(amount) * (dbPrice ?? oraclePrice);
-    } else if (assetId === APP_CONFIG.backstopTokenAddress) {
-      // Simulate singled sided withdraw to USDC
-      const lpTokenValue = await sorobanHelper.simLPTokenToUSDC(amount);
-      if (lpTokenValue !== undefined) {
-        bidValue += FixedMath.toFloat(lpTokenValue, 7);
+        if (auctionType !== AuctionType.Interest) {
+          effectiveCollateral += reserve.toEffectiveAssetFromBTokenFloat(amount) * oraclePrice;
+          // TODO: change this to use the price in the db
+          lotValue += reserve.toAssetFromBTokenFloat(amount) * (dbPrice ?? oraclePrice);
+        }
+        // Interest auctions are in underlying assets
+        else {
+          lotValue +=
+            (Number(amount) / 10 ** reserve.tokenMetadata.decimals) * (dbPrice ?? oraclePrice);
+        }
+      } else if (assetId === APP_CONFIG.backstopTokenAddress) {
+        // Simulate singled sided withdraw to USDC
+        const lpTokenValue = await sorobanHelper.simLPTokenToUSDC(amount);
+        if (lpTokenValue !== undefined) {
+          lotValue += FixedMath.toFloat(lpTokenValue, 7);
+        }
+        // Approximate the value of the comet tokens if simulation fails
+        else {
+          const backstopToken = await sorobanHelper.loadBackstopToken();
+          lotValue += FixedMath.toFloat(amount, 7) * backstopToken.lpTokenPrice;
+        }
       } else {
-        const backstopToken = await sorobanHelper.loadBackstopToken();
-        bidValue += FixedMath.toFloat(amount, 7) * backstopToken.lpTokenPrice;
+        throw new Error(`Failed to value lot asset: ${assetId}`);
       }
-    } else {
-      throw new Error(`Failed to value bid asset: ${assetId}`);
     }
-  }
 
-  return { effectiveCollateral, effectiveLiabilities, lotValue, bidValue };
+    for (const [assetId, amount] of auctionData.bid) {
+      const reserve = reserves.get(assetId);
+      const dbPrice = db.getPriceEntry(assetId)?.price;
+
+      if (reserve !== undefined) {
+        const oraclePrice = poolOracle.getPriceFloat(assetId);
+        if (oraclePrice === undefined) {
+          throw new Error(`Failed to get oracle price for asset: ${assetId}`);
+        }
+
+        effectiveLiabilities += reserve.toEffectiveAssetFromDTokenFloat(amount) * oraclePrice;
+        // TODO: change this to use the price in the db
+        bidValue += reserve.toAssetFromDTokenFloat(amount) * (dbPrice ?? oraclePrice);
+      } else if (assetId === APP_CONFIG.backstopTokenAddress) {
+        // Simulate singled sided withdraw to USDC
+        const lpTokenValue = await sorobanHelper.simLPTokenToUSDC(amount);
+        if (lpTokenValue !== undefined) {
+          bidValue += FixedMath.toFloat(lpTokenValue, 7);
+        } else {
+          const backstopToken = await sorobanHelper.loadBackstopToken();
+          bidValue += FixedMath.toFloat(amount, 7) * backstopToken.lpTokenPrice;
+        }
+      } else {
+        throw new Error(`Failed to value bid asset: ${assetId}`);
+      }
+    }
+
+    return { effectiveCollateral, effectiveLiabilities, lotValue, bidValue };
+  } catch (e: any) {
+    logger.error(`Error calculating auction value`, e);
+    return { effectiveCollateral: 0, effectiveLiabilities: 0, lotValue: 0, bidValue: 0 };
+  }
 }

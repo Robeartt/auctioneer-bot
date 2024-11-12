@@ -5,8 +5,10 @@ import { parse } from './json.js';
 export interface Filler {
   name: string;
   keypair: Keypair;
+  primaryAsset: string;
   minProfitPct: number;
   minHealthFactor: number;
+  minPrimaryCollateral: bigint;
   forceFill: boolean;
   supportedBid: string[];
   supportedLot: string[];
@@ -81,12 +83,15 @@ export function validateFiller(filler: any): boolean {
     typeof filler.minProfitPct === 'number' &&
     typeof filler.minHealthFactor === 'number' &&
     typeof filler.forceFill === 'boolean' &&
+    typeof filler.primaryAsset === 'string' &&
+    typeof filler.minPrimaryCollateral === 'string' &&
     Array.isArray(filler.supportedBid) &&
     filler.supportedBid.every((item: any) => typeof item === 'string') &&
     Array.isArray(filler.supportedLot) &&
     filler.supportedLot.every((item: any) => typeof item === 'string')
   ) {
     filler.keypair = Keypair.fromSecret(filler.keypair);
+    filler.minPrimaryCollateral = BigInt(filler.minPrimaryCollateral);
     return true;
   }
   return false;

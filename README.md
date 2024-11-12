@@ -64,8 +64,10 @@ The `fillers` array contains configurations for individual filler accounts. The 
 |-------|-------------|
 | `name` | A unique name for this filler account. Used in logs and slack notifications. |
 | `keypair` | The secret key for this filler account. **Keep this secret and secure!** |
+| `primaryAsset` | The primary asset the filler will use as collateral in the pool. | 
 | `minProfitPct` | The minimum profit percentage required for the filler to bid on an auction. |
 | `minHealthFactor` | The minimum health factor the filler will take on during liquidation and bad debt auctions. |
+| `minPrimaryCollateral` | The minimum amount of the primary asset the Filler will maintain as collateral in the pool. |
 | `forceFill` | Boolean flag to indicate if the bot should force fill auctions even if profit expectations aren't met to ensure pool health. |
 | `supportedBid` | An array of asset addresses that this filler bot is allowed to bid with. Bids are taken as additional liabilities (dTokens) for liquidation and bad debt auctions, and tokens for interest auctions. Must include the `backstopTokenAddress` to bid on interest auctions. |
 | `supportedLot` | An array of asset addresses that this filler bot is allowed to receive. Lots are given as collateral (bTokens) for liquidation auctions and tokens for interest and bad debt auctions. The filler should have trustlines to all assets that are Stellar assets. Must include `backstopTokenAddress` to bid on bad debt auctions. |

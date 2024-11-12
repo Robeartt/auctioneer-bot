@@ -133,6 +133,33 @@ export class SorobanHelper {
     );
   }
 
+  async loadBalances(userId: string, tokens: string[]): Promise<Map<string, bigint>> {
+    try {
+      let balances = new Map<string, bigint>();
+
+      // break tokens array into chunks of at most 5 tokens
+      let concurrency_limit = 5;
+      let promise_chunks: string[][] = [];
+      for (let i = 0; i < tokens.length; i += concurrency_limit) {
+        promise_chunks.push(tokens.slice(i, i + concurrency_limit));
+      }
+
+      // fetch each chunk of token balances concurrently
+      for (const chunk of promise_chunks) {
+        const chunkResults = await Promise.all(
+          chunk.map((token) => this.simBalance(token, userId))
+        );
+        chunk.forEach((token, index) => {
+          balances.set(token, chunkResults[index]);
+        });
+      }
+      return balances;
+    } catch (e) {
+      logger.error(`Error loading balances: ${e}`);
+      throw e;
+    }
+  }
+
   async simLPTokenToUSDC(amount: bigint): Promise<bigint | undefined> {
     try {
       let comet = new Contract(APP_CONFIG.backstopTokenAddress);

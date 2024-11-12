@@ -15,6 +15,8 @@
             "minProfitPct": 0.10,
             "minHealthFactor": 1.5,
             "forceFill": true,
+            "primaryAsset": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+            "minPrimaryCollateral": "10000000000",
             "supportedBid": [
                 "CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM",
                 "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",

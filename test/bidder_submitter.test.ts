@@ -1,4 +1,4 @@
-import { RequestType } from '@blend-capital/blend-sdk';
+import { Request, RequestType } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import {
   buildFillRequests,
@@ -12,18 +12,19 @@ import {
   BidderSubmitter,
   FillerUnwind,
 } from '../src/bidder_submitter';
+import { managePositions } from '../src/filler';
 import { AuctioneerDatabase, AuctionEntry, AuctionType } from '../src/utils/db';
 import { logger } from '../src/utils/logger';
 import { sendSlackNotification } from '../src/utils/slack_notifier';
 import { SorobanHelper } from '../src/utils/soroban_helper';
-import { inMemoryAuctioneerDb } from './helpers/mocks';
+import { inMemoryAuctioneerDb, mockedPool, mockPoolOracle, mockPoolUser } from './helpers/mocks';
 
 // Mock dependencies
 jest.mock('../src/utils/db');
 jest.mock('../src/utils/soroban_helper');
 jest.mock('../src/auction');
 jest.mock('../src/utils/slack_notifier');
-jest.mock('@blend-capital/blend-sdk');
+jest.mock('../src/filler');
 jest.mock('../src/utils/soroban_helper');
 jest.mock('@stellar/stellar-sdk', () => {
   const actual = jest.requireActual('@stellar/stellar-sdk');
@@ -87,14 +88,16 @@ describe('BidderSubmitter', () => {
   const mockedSendSlackNotif = sendSlackNotification as jest.MockedFunction<
     typeof sendSlackNotification
   >;
-  let mockCalculateBlockFillAndPercent = calculateBlockFillAndPercent as jest.MockedFunction<
+  const mockCalculateBlockFillAndPercent = calculateBlockFillAndPercent as jest.MockedFunction<
     typeof calculateBlockFillAndPercent
   >;
-  let mockScaleAuction = scaleAuction as jest.MockedFunction<typeof scaleAuction>;
-  let mockBuildFillRequests = buildFillRequests as jest.MockedFunction<typeof buildFillRequests>;
-  let mockCalculateAuctionValue = calculateAuctionValue as jest.MockedFunction<
+  const mockScaleAuction = scaleAuction as jest.MockedFunction<typeof scaleAuction>;
+  const mockBuildFillRequests = buildFillRequests as jest.MockedFunction<typeof buildFillRequests>;
+  const mockCalculateAuctionValue = calculateAuctionValue as jest.MockedFunction<
     typeof calculateAuctionValue
   >;
+  const mockedManagePositions = managePositions as jest.MockedFunction<typeof managePositions>;
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockDb = inMemoryAuctioneerDb();
@@ -102,6 +105,7 @@ describe('BidderSubmitter', () => {
   });
 
   it('should submit a bid successfully', async () => {
+    bidderSubmitter.addSubmission = jest.fn();
     mockCalculateBlockFillAndPercent.mockResolvedValue({ fillBlock: 1000, fillPercent: 50 });
     mockScaleAuction.mockReturnValue({
       bid: new Map<string, bigint>([['USD', BigInt(12)]]),
@@ -111,8 +115,8 @@ describe('BidderSubmitter', () => {
     mockBuildFillRequests.mockResolvedValue([
       {
         request_type: RequestType.FillUserLiquidationAuction,
-        address: '',
-        amount: 0n,
+        address: Keypair.random().publicKey(),
+        amount: 100n,
       },
     ]);
     mockCalculateAuctionValue.mockResolvedValue({
@@ -129,6 +133,8 @@ describe('BidderSubmitter', () => {
         keypair: Keypair.random(),
         minProfitPct: 0,
         minHealthFactor: 0,
+        primaryAsset: 'USD',
+        minPrimaryCollateral: 0n,
         forceFill: false,
         supportedBid: [],
         supportedLot: [],
@@ -136,7 +142,7 @@ describe('BidderSubmitter', () => {
       auctionEntry: {
         user_id: 'test-user',
         auction_type: AuctionType.Liquidation,
-        filler: 'test-filler',
+        filler: Keypair.random().publicKey(),
         start_block: 900,
         fill_block: 1000,
       } as AuctionEntry,
@@ -151,9 +157,14 @@ describe('BidderSubmitter', () => {
     );
     expect(mockedSorobanHelper.submitTransaction).toHaveBeenCalled();
     expect(mockDb.setFilledAuctionEntry).toHaveBeenCalled();
+    expect(bidderSubmitter.addSubmission).toHaveBeenCalledWith(
+      { type: BidderSubmissionType.UNWIND, filler: submission.filler },
+      2
+    );
   });
 
   it('should handle auction already filled', async () => {
+    bidderSubmitter.addSubmission = jest.fn();
     mockedSorobanHelper.loadAuction.mockResolvedValue(undefined);
     mockedSorobanHelperConstructor.mockReturnValue(mockedSorobanHelper);
     const submission: AuctionBid = {
@@ -163,6 +174,8 @@ describe('BidderSubmitter', () => {
         keypair: Keypair.random(),
         minProfitPct: 0,
         minHealthFactor: 0,
+        primaryAsset: 'USD',
+        minPrimaryCollateral: 0n,
         forceFill: false,
         supportedBid: [],
         supportedLot: [],
@@ -177,6 +190,87 @@ describe('BidderSubmitter', () => {
 
     expect(result).toBe(true);
     expect(mockDb.deleteAuctionEntry).toHaveBeenCalledWith('test-user', AuctionType.Liquidation);
+  });
+
+  it('should manage positions during unwind', async () => {
+    const fillerBalance = new Map<string, bigint>([['USD', 123n]]);
+    const unwindRequest: Request[] = [
+      {
+        request_type: RequestType.Repay,
+        address: 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75',
+        amount: 123n,
+      },
+    ];
+
+    bidderSubmitter.addSubmission = jest.fn();
+    mockedSorobanHelper.loadPool.mockResolvedValue(mockedPool);
+    mockedSorobanHelper.loadPoolOracle.mockResolvedValue(mockPoolOracle);
+    mockedSorobanHelper.loadUser.mockResolvedValue(mockPoolUser);
+    mockedSorobanHelper.loadBalances.mockResolvedValue(fillerBalance);
+
+    mockedManagePositions.mockReturnValue(unwindRequest);
+
+    const submission: FillerUnwind = {
+      type: BidderSubmissionType.UNWIND,
+      filler: {
+        name: 'test-filler',
+        keypair: Keypair.random(),
+        minProfitPct: 0,
+        minHealthFactor: 0,
+        primaryAsset: 'USD',
+        minPrimaryCollateral: 100n,
+        forceFill: false,
+        supportedBid: ['USD', 'XLM'],
+        supportedLot: ['EURC', 'XLM'],
+      },
+    };
+    let result = await bidderSubmitter.submit(submission);
+
+    expect(result).toBe(true);
+    expect(mockedSorobanHelper.loadBalances).toHaveBeenCalledWith(
+      submission.filler.keypair.publicKey(),
+      ['USD', 'XLM', 'EURC']
+    );
+    expect(mockedManagePositions).toHaveBeenCalled();
+    expect(mockedSorobanHelper.submitTransaction).toHaveBeenCalled();
+    expect(bidderSubmitter.addSubmission).toHaveBeenCalledWith(submission, 2);
+  });
+
+  it('should stop submitting unwind events when no action is taken', async () => {
+    const fillerBalance = new Map<string, bigint>([['USD', 123n]]);
+    const unwindRequest: Request[] = [];
+
+    bidderSubmitter.addSubmission = jest.fn();
+    mockedSorobanHelper.loadPool.mockResolvedValue(mockedPool);
+    mockedSorobanHelper.loadPoolOracle.mockResolvedValue(mockPoolOracle);
+    mockedSorobanHelper.loadUser.mockResolvedValue(mockPoolUser);
+    mockedSorobanHelper.loadBalances.mockResolvedValue(fillerBalance);
+
+    mockedManagePositions.mockReturnValue(unwindRequest);
+
+    const submission: FillerUnwind = {
+      type: BidderSubmissionType.UNWIND,
+      filler: {
+        name: 'test-filler',
+        keypair: Keypair.random(),
+        minProfitPct: 0,
+        minHealthFactor: 0,
+        primaryAsset: 'USD',
+        minPrimaryCollateral: 100n,
+        forceFill: false,
+        supportedBid: ['USD', 'XLM'],
+        supportedLot: ['EURC', 'XLM'],
+      },
+    };
+    let result = await bidderSubmitter.submit(submission);
+
+    expect(result).toBe(true);
+    expect(mockedSorobanHelper.loadBalances).toHaveBeenCalledWith(
+      submission.filler.keypair.publicKey(),
+      ['USD', 'XLM', 'EURC']
+    );
+    expect(mockedSorobanHelper.submitTransaction).toHaveBeenCalledTimes(0);
+    expect(bidderSubmitter.addSubmission).toHaveBeenCalledTimes(0);
   });
 
   it('should return true if auction is in the queue', () => {
@@ -215,6 +309,8 @@ describe('BidderSubmitter', () => {
         keypair: Keypair.random(),
         minProfitPct: 0,
         minHealthFactor: 0,
+        primaryAsset: 'USD',
+        minPrimaryCollateral: 0n,
         forceFill: false,
         supportedBid: [],
         supportedLot: [],
@@ -256,6 +352,8 @@ describe('BidderSubmitter', () => {
         keypair: Keypair.random(),
         minProfitPct: 0,
         minHealthFactor: 0,
+        primaryAsset: 'USD',
+        minPrimaryCollateral: 0n,
         forceFill: false,
         supportedBid: [],
         supportedLot: [],
