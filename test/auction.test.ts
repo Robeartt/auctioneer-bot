@@ -56,7 +56,7 @@ describe('auction', () => {
     filler = {
       name: 'Tester',
       keypair: Keypair.random(),
-      minProfitPct: 0.2,
+      defaultProfitPct: 0.2,
       minHealthFactor: 1.3,
       primaryAsset: 'USD',
       minPrimaryCollateral: 0n,
@@ -387,7 +387,7 @@ describe('auction', () => {
         filler: {
           name: '',
           keypair: filler,
-          minProfitPct: 0.2,
+          defaultProfitPct: 0.2,
           minHealthFactor: 1.2,
           primaryAsset: 'USD',
           minPrimaryCollateral: 0n,
@@ -436,7 +436,7 @@ describe('auction', () => {
         filler: {
           name: '',
           keypair: filler,
-          minProfitPct: 0.2,
+          defaultProfitPct: 0.2,
           minHealthFactor: 1.2,
           primaryAsset: 'USD',
           minPrimaryCollateral: 0n,
@@ -484,7 +484,7 @@ describe('auction', () => {
         filler: {
           name: '',
           keypair: filler,
-          minProfitPct: 0.2,
+          defaultProfitPct: 0.2,
           minHealthFactor: 1.2,
           primaryAsset: 'USD',
           minPrimaryCollateral: 0n,
@@ -548,7 +548,7 @@ describe('auction', () => {
         filler: {
           name: '',
           keypair: filler,
-          minProfitPct: 0.2,
+          defaultProfitPct: 0.2,
           minHealthFactor: 1.2,
           primaryAsset: 'USD',
           minPrimaryCollateral: 0n,

@@ -6,7 +6,7 @@ export interface Filler {
   name: string;
   keypair: Keypair;
   primaryAsset: string;
-  minProfitPct: number;
+  defaultProfitPct: number;
   minHealthFactor: number;
   minPrimaryCollateral: bigint;
   forceFill: boolean;
@@ -20,6 +20,12 @@ export interface PriceSource {
   symbol: string;
 }
 
+export interface AuctionProfit {
+  profitPct: number;
+  supportedBid: string[];
+  supportedLot: string[];
+}
+
 export interface AppConfig {
   name: string;
   rpcURL: string;
@@ -31,7 +37,8 @@ export interface AppConfig {
   blndAddress: string;
   keypair: Keypair;
   fillers: Filler[];
-  priceSources: PriceSource[];
+  priceSources: PriceSource[] | undefined;
+  profits: AuctionProfit[] | undefined;
   slackWebhook: string | undefined;
 }
 
@@ -61,7 +68,8 @@ export function validateAppConfig(config: any): boolean {
     typeof config.blndAddress !== 'string' ||
     typeof config.keypair !== 'string' ||
     !Array.isArray(config.fillers) ||
-    !Array.isArray(config.priceSources) ||
+    (config.priceSources !== undefined && !Array.isArray(config.priceSources)) ||
+    (config.profits !== undefined && !Array.isArray(config.profits)) ||
     (config.slackWebhook !== undefined && typeof config.slackWebhook !== 'string')
   ) {
     return false;
@@ -69,7 +77,11 @@ export function validateAppConfig(config: any): boolean {
 
   config.keypair = Keypair.fromSecret(config.keypair);
 
-  return config.fillers.every(validateFiller) && config.priceSources.every(validatePriceSource);
+  return (
+    config.fillers.every(validateFiller) &&
+    (config.priceSources === undefined || config.priceSources.every(validatePriceSource)) &&
+    (config.profits === undefined || config.profits.every(validateAuctionProfit))
+  );
 }
 
 export function validateFiller(filler: any): boolean {
@@ -106,6 +118,24 @@ export function validatePriceSource(priceSource: any): boolean {
     typeof priceSource.assetId === 'string' &&
     (priceSource.type === 'binance' || priceSource.type === 'coinbase') &&
     typeof priceSource.symbol === 'string'
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export function validateAuctionProfit(profits: any): boolean {
+  if (typeof profits !== 'object' || profits === null) {
+    return false;
+  }
+
+  if (
+    typeof profits.profitPct === 'number' &&
+    Array.isArray(profits.supportedBid) &&
+    profits.supportedBid.every((item: any) => typeof item === 'string') &&
+    Array.isArray(profits.supportedLot) &&
+    profits.supportedLot.every((item: any) => typeof item === 'string')
   ) {
     return true;
   }

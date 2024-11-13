@@ -25,7 +25,7 @@ jest.mock('../src/utils/config.js', () => {
       {
         name: 'filler1',
         keypair: Keypair.random(),
-        minProfitPct: 0.05,
+        defaultProfitPct: 0.05,
         minHealthFactor: 1.1,
         forceFill: true,
         supportedBid: ['USD', 'BTC', 'LP'],
@@ -34,7 +34,7 @@ jest.mock('../src/utils/config.js', () => {
       {
         name: 'filler2',
         keypair: Keypair.random(),
-        minProfitPct: 0.08,
+        defaultProfitPct: 0.08,
         minHealthFactor: 1.1,
         forceFill: true,
         supportedBid: ['USD', 'ETH', 'XLM'],

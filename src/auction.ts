@@ -1,6 +1,7 @@
 import { AuctionData, FixedMath, Request, RequestType } from '@blend-capital/blend-sdk';
 import { Asset } from '@stellar/stellar-sdk';
 import { AuctionBid } from './bidder_submitter.js';
+import { getFillerProfitPct } from './filler.js';
 import { APP_CONFIG, Filler } from './utils/config.js';
 import { AuctioneerDatabase, AuctionType } from './utils/db.js';
 import { logger } from './utils/logger.js';
@@ -43,14 +44,18 @@ export async function calculateBlockFillAndPercent(
   logger.info(
     `Auction Valuation: Effective Collateral: ${effectiveCollateral}, Effective Liabilities: ${effectiveLiabilities}, Lot Value: ${lotValue}, Bid Value: ${bidValue}`
   );
-  if (lotValue >= bidValue * (1 + filler.minProfitPct)) {
-    const minLotAmount = bidValue * (1 + filler.minProfitPct);
+
+  // find the block delay where the auction meets the required profit percentage
+  const profitPercent = getFillerProfitPct(filler, APP_CONFIG.profits ?? [], auctionData);
+  if (lotValue >= bidValue * (1 + profitPercent)) {
+    const minLotAmount = bidValue * (1 + profitPercent);
     fillBlockDelay = 200 - (lotValue - minLotAmount) / (lotValue / 200);
   } else {
-    const maxBidAmount = lotValue * (1 - filler.minProfitPct);
+    const maxBidAmount = lotValue * (1 - profitPercent);
     fillBlockDelay = 200 + (bidValue - maxBidAmount) / (bidValue / 200);
   }
   fillBlockDelay = Math.min(Math.max(Math.ceil(fillBlockDelay), 0), 400);
+
   // Ensure the filler can fully fill interest auctions
   if (auctionType === AuctionType.Interest) {
     const cometLpTokenBalance = FixedMath.toFloat(
@@ -104,28 +109,6 @@ export async function calculateBlockFillAndPercent(
     fillBlockDelay = Math.min(fillBlockDelay, 350);
   }
   return { fillBlock: auctionData.block + fillBlockDelay, fillPercent };
-}
-
-/**
- * Check if the filler can bid on an auction.
- * @param filler - The filler to check
- * @param auctionData - The auction data for the auction
- * @returns A boolean indicating if the filler cares about the auction.
- */
-export function canFillerBid(filler: Filler, auctionData: AuctionData): boolean {
-  // validate lot
-  for (const [assetId, _] of auctionData.lot) {
-    if (!filler.supportedLot.some((address) => assetId === address)) {
-      return false;
-    }
-  }
-  // validate bid
-  for (const [assetId, _] of auctionData.bid) {
-    if (!filler.supportedBid.some((address) => assetId === address)) {
-      return false;
-    }
-  }
-  return true;
 }
 
 /**

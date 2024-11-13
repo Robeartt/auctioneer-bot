@@ -12,7 +12,7 @@
         {
             "name": "example-liquidator",
             "keypair": "S...",
-            "minProfitPct": 0.10,
+            "defaultProfitPct": 0.10,
             "minHealthFactor": 1.5,
             "forceFill": true,
             "primaryAsset": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
@@ -28,6 +28,19 @@
                 "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA"
             ]
         }    
+    ],
+    "profits": [
+        {
+            "profitPct": 0.05,
+            "supportedBid": [
+                "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+                "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75"
+            ],
+            "supportedLot": [
+                "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+                "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75"
+            ]
+        }
     ],
     "priceSources": [
         {

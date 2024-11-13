@@ -53,7 +53,8 @@ For an example config file that is configured to interact with [Blend v1 mainnet
 | `blndAddress` | The address of the BLND token contract. |
 | `keypair` | The secret key for the bot's auction creating account. This should be different from the fillers as auction creation and auction bidding can happen simultaneously. **Keep this secret and secure!** |
 | `fillers` | A list of accounts that will bid and fill on auctions. |
-| `priceSources` | A list of assets that will have prices sourced from exchanges instead of the pool oracle. |
+| `priceSources` | (Optional) A list of assets that will have prices sourced from exchanges instead of the pool oracle. |
+| `profits` | (Optional) A list of auction profits to define different profit percentages used for matching auctions.
 | `slackWebhook` | (Optional) A slack webhook URL to post updates to (https://hooks.slack.com/services/). Leave undefined if no webhooks are required. |
 
 #### Fillers
@@ -65,7 +66,7 @@ The `fillers` array contains configurations for individual filler accounts. The 
 | `name` | A unique name for this filler account. Used in logs and slack notifications. |
 | `keypair` | The secret key for this filler account. **Keep this secret and secure!** |
 | `primaryAsset` | The primary asset the filler will use as collateral in the pool. | 
-| `minProfitPct` | The minimum profit percentage required for the filler to bid on an auction. |
+| `defaultProfitPct` | The default profit percentage required for the filler to bid on an auction. |
 | `minHealthFactor` | The minimum health factor the filler will take on during liquidation and bad debt auctions. |
 | `minPrimaryCollateral` | The minimum amount of the primary asset the Filler will maintain as collateral in the pool. |
 | `forceFill` | Boolean flag to indicate if the bot should force fill auctions even if profit expectations aren't met to ensure pool health. |
@@ -87,6 +88,18 @@ Each price source has the following fields:
 | `assetId` | The address of the asset for which this price source provides data. |
 | `type` | The type of price source (e.g., "coinbase", "binance"). |
 | `symbol` | The trading symbol used by the price source for this asset. |
+
+#### Profits
+
+The `profits` list defines target profit percentages based on the assets that make up the bid and lot of a given auction. This allows fillers to have flexability in the profit they target. The profit percentage chosen will be the first entry in the `profits` list that supports all bid and lot assets in the auction. If no profit entry is found, the `defaultProfitPct` value defined by the filler will be used.
+
+Each profit entry has the following fields:
+
+| Field | Description |
+|-------|-------------|
+| `profitPct` | The profit percentage required to bid for the auction. |
+| `supportedBid` | An array of asset addresses that the auction bid can contain for this `profitPct` to be used. If any auction bid asset exists outside this list, the `profitPct` will not be used. |
+| `supportedLot` | An array of asset addresses that the auction lot can contain for this `profitPct` to be used. If any auction lot asset exists outside this list, the `profitPct` will not be used. |
 
 ## Build
 

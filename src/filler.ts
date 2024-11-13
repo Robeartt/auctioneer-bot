@@ -1,4 +1,5 @@
 import {
+  AuctionData,
   FixedMath,
   Pool,
   PoolOracle,
@@ -9,9 +10,58 @@ import {
   Reserve,
 } from '@blend-capital/blend-sdk';
 import { Asset } from '@stellar/stellar-sdk';
-import { APP_CONFIG, Filler } from './utils/config.js';
+import { APP_CONFIG, AuctionProfit, Filler } from './utils/config.js';
 import { stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
+
+/**
+ * Check if the filler supports bidding on the auction.
+ * @param filler - The filler to check
+ * @param auctionData - The auction data for the auction
+ * @returns A boolean indicating if the filler cares about the auction.
+ */
+export function canFillerBid(filler: Filler, auctionData: AuctionData): boolean {
+  // validate lot
+  for (const [assetId, _] of auctionData.lot) {
+    if (!filler.supportedLot.some((address) => assetId === address)) {
+      return false;
+    }
+  }
+  // validate bid
+  for (const [assetId, _] of auctionData.bid) {
+    if (!filler.supportedBid.some((address) => assetId === address)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Get the profit percentage the filler should bid at for the auction.
+ * @param filler - The filler
+ * @param auctionProfits - The auction profits for the bot
+ * @param auctionData - The auction data for the auction
+ * @returns The profit percentage the filler should bid at, as a float where 1.0 is 100%
+ */
+export function getFillerProfitPct(
+  filler: Filler,
+  auctionProfits: AuctionProfit[],
+  auctionData: AuctionData
+): number {
+  let bidAssets = Array.from(auctionData.bid.keys());
+  let lotAssets = Array.from(auctionData.lot.keys());
+  for (const profit of auctionProfits) {
+    if (
+      bidAssets.some((address) => !profit.supportedBid.includes(address)) ||
+      lotAssets.some((address) => !profit.supportedLot.includes(address))
+    ) {
+      // either some bid asset or some lot asset is not in the profit's supported assets, skip
+      continue;
+    }
+    return profit.profitPct;
+  }
+  return filler.defaultProfitPct;
+}
 
 /**
  * Manage a filler's positions in the pool. Returns an array of requests to be submitted to the network. This function

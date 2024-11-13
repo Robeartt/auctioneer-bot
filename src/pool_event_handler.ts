@@ -1,7 +1,7 @@
 import { PoolEventType } from '@blend-capital/blend-sdk';
 import { ChildProcess } from 'child_process';
-import { canFillerBid } from './auction.js';
 import { EventType, PoolEventEvent } from './events.js';
+import { canFillerBid } from './filler.js';
 import { updateUser } from './user.js';
 import { APP_CONFIG } from './utils/config.js';
 import { AuctioneerDatabase, AuctionEntry, AuctionType } from './utils/db.js';

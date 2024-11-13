@@ -15,7 +15,7 @@ interface ExchangePrice {
 export async function setPrices(db: AuctioneerDatabase): Promise<void> {
   const coinbaseSymbols: string[] = [];
   const binanceSymbols: string[] = [];
-  for (const source of APP_CONFIG.priceSources) {
+  for (const source of APP_CONFIG.priceSources ?? []) {
     if (source.type === 'coinbase') {
       coinbaseSymbols.push(source.symbol);
     } else if (source.type === 'binance') {
@@ -30,11 +30,10 @@ export async function setPrices(db: AuctioneerDatabase): Promise<void> {
   ]);
   const exchangePriceResult = coinbasePricesResult.concat(binancePricesResult);
 
+  const priceSources = APP_CONFIG.priceSources ?? [];
   const priceEntries: PriceEntry[] = [];
   for (const price of exchangePriceResult) {
-    const assetId = APP_CONFIG.priceSources.find(
-      (source) => source.symbol === price.symbol
-    )?.assetId;
+    const assetId = priceSources.find((source) => source.symbol === price.symbol)?.assetId;
     if (assetId) {
       priceEntries.push({
         asset_id: assetId,

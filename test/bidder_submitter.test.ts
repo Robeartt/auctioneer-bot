@@ -131,7 +131,7 @@ describe('BidderSubmitter', () => {
       filler: {
         name: 'test-filler',
         keypair: Keypair.random(),
-        minProfitPct: 0,
+        defaultProfitPct: 0,
         minHealthFactor: 0,
         primaryAsset: 'USD',
         minPrimaryCollateral: 0n,
@@ -172,7 +172,7 @@ describe('BidderSubmitter', () => {
       filler: {
         name: 'test-filler',
         keypair: Keypair.random(),
-        minProfitPct: 0,
+        defaultProfitPct: 0,
         minHealthFactor: 0,
         primaryAsset: 'USD',
         minPrimaryCollateral: 0n,
@@ -215,7 +215,7 @@ describe('BidderSubmitter', () => {
       filler: {
         name: 'test-filler',
         keypair: Keypair.random(),
-        minProfitPct: 0,
+        defaultProfitPct: 0,
         minHealthFactor: 0,
         primaryAsset: 'USD',
         minPrimaryCollateral: 100n,
@@ -253,7 +253,7 @@ describe('BidderSubmitter', () => {
       filler: {
         name: 'test-filler',
         keypair: Keypair.random(),
-        minProfitPct: 0,
+        defaultProfitPct: 0,
         minHealthFactor: 0,
         primaryAsset: 'USD',
         minPrimaryCollateral: 100n,
@@ -307,7 +307,7 @@ describe('BidderSubmitter', () => {
       filler: {
         name: 'test-filler',
         keypair: Keypair.random(),
-        minProfitPct: 0,
+        defaultProfitPct: 0,
         minHealthFactor: 0,
         primaryAsset: 'USD',
         minPrimaryCollateral: 0n,
@@ -350,7 +350,7 @@ describe('BidderSubmitter', () => {
       filler: {
         name: 'test-filler',
         keypair: Keypair.random(),
-        minProfitPct: 0,
+        defaultProfitPct: 0,
         minHealthFactor: 0,
         primaryAsset: 'USD',
         minPrimaryCollateral: 0n,
