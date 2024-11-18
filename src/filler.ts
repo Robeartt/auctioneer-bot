@@ -13,6 +13,7 @@ import { Asset } from '@stellar/stellar-sdk';
 import { APP_CONFIG, AuctionProfit, Filler } from './utils/config.js';
 import { stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
+import { SorobanHelper } from './utils/soroban_helper.js';
 
 /**
  * Check if the filler supports bidding on the auction.
@@ -61,6 +62,28 @@ export function getFillerProfitPct(
     return profit.profitPct;
   }
   return filler.defaultProfitPct;
+}
+
+/**
+ * Fetch the available balances for a filler. Takes into account any minimum balances required by the filler.
+ * @param filler - The filler
+ * @param assets - The assets to fetch balances for
+ * @param sorobanHelper - The soroban helper object
+ */
+export async function getFillerAvailableBalances(
+  filler: Filler,
+  assets: string[],
+  sorobanHelper: SorobanHelper
+): Promise<Map<string, bigint>> {
+  const balances = await sorobanHelper.loadBalances(filler.keypair.publicKey(), assets);
+  const xlm_address = Asset.native().contractId(APP_CONFIG.networkPassphrase);
+  const xlm_bal = balances.get(xlm_address);
+  if (xlm_bal !== undefined) {
+    const safe_xlm_bal =
+      xlm_bal > FixedMath.toFixed(50, 7) ? xlm_bal - FixedMath.toFixed(50, 7) : 0n;
+    balances.set(xlm_address, safe_xlm_bal);
+  }
+  return balances;
 }
 
 /**
@@ -124,6 +147,8 @@ export function managePositions(
         address: reserve.assetId,
         amount: tokenBalance,
       });
+    } else {
+      hasLeftoverLiabilities.push(assetIndex);
     }
   }
 

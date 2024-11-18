@@ -1,10 +1,10 @@
 import { PositionsEstimate } from '@blend-capital/blend-sdk';
 import { updateUser } from './user.js';
-import { AuctioneerDatabase, AuctionType, UserEntry } from './utils/db.js';
+import { APP_CONFIG } from './utils/config.js';
+import { AuctioneerDatabase, AuctionType } from './utils/db.js';
 import { logger } from './utils/logger.js';
 import { SorobanHelper } from './utils/soroban_helper.js';
 import { WorkSubmission, WorkSubmissionType } from './work_submitter.js';
-import { APP_CONFIG } from './utils/config.js';
 
 /**
  * Check if a user is liquidatable
@@ -15,7 +15,7 @@ export function isLiquidatable(user: PositionsEstimate): boolean {
   if (
     user.totalEffectiveLiabilities > 0 &&
     user.totalEffectiveCollateral > 0 &&
-    user.totalEffectiveCollateral / user.totalEffectiveLiabilities < 0.99
+    user.totalEffectiveCollateral / user.totalEffectiveLiabilities < 0.995
   ) {
     return true;
   }
@@ -47,6 +47,9 @@ export function calculateLiquidationPercent(user: PositionsEstimate): bigint {
   const denominator = avgInverseLF * 1.1 - avgCF * estIncentive;
   const liqPercent = BigInt(
     Math.min(Math.round((numerator / denominator / user.totalBorrowed) * 100), 100)
+  );
+  logger.info(
+    `Calculated liquidation percent ${liqPercent} with est incentive ${estIncentive} numerator ${numerator} and denominator ${denominator} for user ${user}.`
   );
   return liqPercent;
 }

@@ -1,6 +1,8 @@
 import {
+  Auction,
   AuctionData,
   BackstopToken,
+  ContractErrorType,
   Network,
   parseError,
   Pool,
@@ -103,7 +105,7 @@ export class SorobanHelper {
     }
   }
 
-  async loadAuction(userId: string, auctionType: number): Promise<AuctionData | undefined> {
+  async loadAuction(userId: string, auctionType: number): Promise<Auction | undefined> {
     try {
       let rpc = new SorobanRpc.Server(this.network.rpc, this.network.opts);
       const ledgerKey = AuctionData.ledgerKey(APP_CONFIG.poolAddress, {
@@ -114,10 +116,10 @@ export class SorobanHelper {
       if (ledgerData.entries.length === 0) {
         return undefined;
       }
-      let auction = PoolContract.parsers.getAuction(
+      let auctionData = PoolContract.parsers.getAuction(
         ledgerData.entries[0].val.contractData().val().toXDR('base64')
       );
-      return auction;
+      return new Auction(userId, auctionType, auctionData);
     } catch (e) {
       logger.error(`Error loading auction: ${e}`);
       throw e;
@@ -133,6 +135,9 @@ export class SorobanHelper {
     );
   }
 
+  /**
+   * @dev WARNING: If loading balances for the filler, use `getFillerAvailableBalances` instead.
+   */
   async loadBalances(userId: string, tokens: string[]): Promise<Map<string, bigint>> {
     try {
       let balances = new Map<string, bigint>();
@@ -234,6 +239,7 @@ export class SorobanHelper {
       .addOperation(xdr.Operation.fromXDR(operation, 'base64'))
       .build();
 
+    logger.info(`Attempting to simulate and submit transaction: ${tx.toXDR()}`);
     const simResult = await rpc.simulateTransaction(tx);
     if (SorobanRpc.Api.isSimulationSuccess(simResult)) {
       let assembledTx = SorobanRpc.assembleTransaction(tx, simResult).build();
@@ -246,7 +252,7 @@ export class SorobanHelper {
       if (txResponse.status !== 'PENDING') {
         const error = parseError(txResponse);
         logger.error(
-          `Transaction failed to send: Tx Hash: ${txResponse.hash} Error Result XDR: ${txResponse.errorResult?.toXDR('base64')} Parsed Error: ${error}`
+          `Transaction failed to send: Tx Hash: ${txResponse.hash} Error Result XDR: ${txResponse.errorResult?.toXDR('base64')} Parsed Error: ${ContractErrorType[error.type]}`
         );
         throw error;
       }
@@ -260,7 +266,7 @@ export class SorobanHelper {
       if (get_tx_response.status !== 'SUCCESS') {
         const error = parseError(get_tx_response);
         logger.error(
-          `Tx Failed: ${error}, Error Result XDR: ${get_tx_response.resultXdr.toXDR('base64')}`
+          `Tx Failed: ${ContractErrorType[error.type]}, Error Result XDR: ${get_tx_response.resultXdr.toXDR('base64')}`
         );
 
         throw error;
@@ -277,6 +283,7 @@ export class SorobanHelper {
       return { ...get_tx_response, txHash: txResponse.hash };
     }
     const error = parseError(simResult);
+    logger.error(`Tx failed to simlate: ${ContractErrorType[error.type]}`);
     throw error;
   }
 }

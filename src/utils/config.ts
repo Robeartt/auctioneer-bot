@@ -72,6 +72,7 @@ export function validateAppConfig(config: any): boolean {
     (config.profits !== undefined && !Array.isArray(config.profits)) ||
     (config.slackWebhook !== undefined && typeof config.slackWebhook !== 'string')
   ) {
+    console.log('Invalid app config');
     return false;
   }
 
@@ -92,7 +93,7 @@ export function validateFiller(filler: any): boolean {
   if (
     typeof filler.name === 'string' &&
     typeof filler.keypair === 'string' &&
-    typeof filler.minProfitPct === 'number' &&
+    typeof filler.defaultProfitPct === 'number' &&
     typeof filler.minHealthFactor === 'number' &&
     typeof filler.forceFill === 'boolean' &&
     typeof filler.primaryAsset === 'string' &&
@@ -106,6 +107,7 @@ export function validateFiller(filler: any): boolean {
     filler.minPrimaryCollateral = BigInt(filler.minPrimaryCollateral);
     return true;
   }
+  console.log('Invalid filler', filler);
   return false;
 }
 
@@ -121,7 +123,7 @@ export function validatePriceSource(priceSource: any): boolean {
   ) {
     return true;
   }
-
+  console.log('Invalid price source', priceSource);
   return false;
 }
 
@@ -140,5 +142,6 @@ export function validateAuctionProfit(profits: any): boolean {
     return true;
   }
 
+  console.log('Invalid profit', profits);
   return false;
 }

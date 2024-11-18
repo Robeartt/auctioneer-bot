@@ -1,11 +1,6 @@
 import { PoolContract } from '@blend-capital/blend-sdk';
 import { SorobanRpc } from '@stellar/stellar-sdk';
-import {
-  buildFillRequests,
-  calculateAuctionValue,
-  calculateBlockFillAndPercent,
-  scaleAuction,
-} from './auction.js';
+import { calculateAuctionFill } from './auction.js';
 import { managePositions } from './filler.js';
 import { APP_CONFIG, Filler } from './utils/config.js';
 import { AuctioneerDatabase, AuctionEntry, AuctionType } from './utils/db.js';
@@ -75,47 +70,34 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
 
   async submitBid(sorobanHelper: SorobanHelper, auctionBid: AuctionBid): Promise<boolean> {
     try {
+      logger.info(`Submitting bid for auction ${stringify(auctionBid.auctionEntry, 2)}`);
       const currLedger = (
         await new SorobanRpc.Server(
           sorobanHelper.network.rpc,
           sorobanHelper.network.opts
         ).getLatestLedger()
       ).sequence;
+      const nextLedger = currLedger + 1;
 
-      const auctionData = await sorobanHelper.loadAuction(
+      const auction = await sorobanHelper.loadAuction(
         auctionBid.auctionEntry.user_id,
         auctionBid.auctionEntry.auction_type
       );
 
-      // Auction has been filled remove from the database
-      if (auctionData === undefined) {
-        this.db.deleteAuctionEntry(
-          auctionBid.auctionEntry.user_id,
-          auctionBid.auctionEntry.auction_type
-        );
+      if (auction === undefined) {
+        // allow bidder handler to re-process the auction entry
         return true;
       }
 
-      const fillCalculation = await calculateBlockFillAndPercent(
+      const fill = await calculateAuctionFill(
         auctionBid.filler,
-        auctionBid.auctionEntry.auction_type,
-        auctionData,
+        auction,
+        nextLedger,
         sorobanHelper,
         this.db
       );
 
-      if (currLedger + 1 >= fillCalculation.fillBlock) {
-        const scaledAuction = scaleAuction(
-          auctionData,
-          currLedger + 1,
-          fillCalculation.fillPercent
-        );
-        const request = await buildFillRequests(
-          auctionBid,
-          scaledAuction,
-          fillCalculation.fillPercent,
-          sorobanHelper
-        );
+      if (nextLedger >= fill.block) {
         const pool = new PoolContract(APP_CONFIG.poolAddress);
 
         const result = await sorobanHelper.submitTransaction(
@@ -123,43 +105,38 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
             from: auctionBid.auctionEntry.filler,
             spender: auctionBid.auctionEntry.filler,
             to: auctionBid.auctionEntry.filler,
-            requests: request,
+            requests: fill.requests,
           }),
           auctionBid.filler.keypair
         );
-        const filledAuction = scaleAuction(auctionData, result.ledger, fillCalculation.fillPercent);
-        const filledAuctionValue = await calculateAuctionValue(
-          auctionBid.auctionEntry.auction_type,
-          filledAuction,
-          sorobanHelper,
-          this.db
-        );
-        let logMessage =
-          `Successful bid on auction\n` +
-          `Type: ${AuctionType[auctionBid.auctionEntry.auction_type]}\n` +
-          `User: ${auctionBid.auctionEntry.user_id}\n` +
-          `Filler: ${auctionBid.filler.name}\n` +
-          `Fill Percent ${fillCalculation.fillPercent}\n` +
-          `Ledger Fill Delta ${result.ledger - auctionBid.auctionEntry.start_block}\n` +
-          `Hash ${result.txHash}\n`;
-        await sendSlackNotification(logMessage);
-        logger.info(logMessage);
+        const [scaledAuction] = auction.scale(result.ledger, fill.percent);
         this.db.setFilledAuctionEntry({
           tx_hash: result.txHash,
           filler: auctionBid.auctionEntry.filler,
           user_id: auctionBid.auctionEntry.filler,
           auction_type: auctionBid.auctionEntry.auction_type,
-          bid: filledAuction.bid,
-          bid_total: filledAuctionValue.bidValue,
-          lot: filledAuction.lot,
-          lot_total: filledAuctionValue.lotValue,
-          est_profit: filledAuctionValue.lotValue - filledAuctionValue.bidValue,
+          bid: scaledAuction.data.bid,
+          bid_total: fill.bidValue,
+          lot: scaledAuction.data.lot,
+          lot_total: fill.lotValue,
+          est_profit: fill.lotValue - fill.bidValue,
           fill_block: result.ledger,
           timestamp: result.latestLedgerCloseTime,
         });
         this.addSubmission({ type: BidderSubmissionType.UNWIND, filler: auctionBid.filler }, 2);
+        let logMessage =
+          `Successful bid on auction\n` +
+          `Type: ${AuctionType[auctionBid.auctionEntry.auction_type]}\n` +
+          `User: ${auctionBid.auctionEntry.user_id}\n` +
+          `Filler: ${auctionBid.filler.name}\n` +
+          `Fill Percent ${fill.percent}\n` +
+          `Ledger Fill Delta ${result.ledger - auctionBid.auctionEntry.start_block}\n` +
+          `Hash ${result.txHash}\n`;
+        await sendSlackNotification(logMessage);
+        logger.info(logMessage);
         return true;
       }
+      // allow bidder handler to re-process the auction entry
       return true;
     } catch (e: any) {
       const logMessage =
@@ -176,6 +153,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
   }
 
   async submitUnwind(sorobanHelper: SorobanHelper, fillerUnwind: FillerUnwind): Promise<boolean> {
+    logger.info(`Submitting unwind for filler ${fillerUnwind.filler.keypair.publicKey()}`);
     const filler_pubkey = fillerUnwind.filler.keypair.publicKey();
     const filler_tokens = [
       ...new Set([
@@ -208,6 +186,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       filler_balances
     );
     if (requests.length > 0) {
+      logger.info('Unwind found positions to manage', requests);
       // some positions to manage - submit the transaction
       const pool_contract = new PoolContract(APP_CONFIG.poolAddress);
       const result = await sorobanHelper.submitTransaction(
@@ -233,8 +212,12 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         `Filler has liabilities that cannot be removed\n` +
         `Filler: ${fillerUnwind.filler.name}\n` +
         `Positions: ${stringify(filler_user.positions, 2)}`;
+      logger.info(logMessage);
       await sendSlackNotification(logMessage);
+      return true;
     }
+
+    logger.info(`Filler has no positions to manage, stopping unwind events.`);
     return true;
   }
 

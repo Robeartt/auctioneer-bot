@@ -16,6 +16,10 @@ export async function sendSlackNotification(message: string): Promise<void> {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
+    } else {
+      console.log(
+        `Bot Name: ${APP_CONFIG.name}\nTimestamp: ${new Date().toISOString()}\nPool Address: ${APP_CONFIG.poolAddress}\n${message}`
+      );
     }
   } catch (e) {
     logger.error(`Error sending slack notification: ${e}`);

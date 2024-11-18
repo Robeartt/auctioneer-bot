@@ -132,6 +132,7 @@ export class PoolEventHandler {
       case PoolEventType.FillAuction: {
         const logMessage = `Auction Fill Event\nType ${AuctionType[poolEvent.event.auctionType]}\nFiller: ${poolEvent.event.from}\nUser: ${poolEvent.event.user}\nFill Percent: ${poolEvent.event.fillAmount}\nTx Hash: ${poolEvent.event.txHash}\n`;
         await sendSlackNotification(logMessage);
+        logger.info(logMessage);
         if (poolEvent.event.fillAmount === BigInt(100)) {
           // auction was fully filled, remove from ongoing auctions
           let runResult = this.db.deleteAuctionEntry(
@@ -139,19 +140,27 @@ export class PoolEventHandler {
             poolEvent.event.auctionType
           );
           if (runResult.changes !== 0) {
-            logger.info(logMessage);
+            logger.info(
+              `Auction Deleted\nType: ${AuctionType[poolEvent.event.auctionType]}\nUser: ${poolEvent.event.user}`
+            );
           }
-          if (poolEvent.event.auctionType === AuctionType.Liquidation) {
-            const { estimate: userPositionsEstimate, user } =
-              await this.sorobanHelper.loadUserPositionEstimate(poolEvent.event.user);
-            updateUser(this.db, pool, user, userPositionsEstimate, poolEvent.event.ledger);
-          } else if (poolEvent.event.auctionType === AuctionType.BadDebt) {
-            sendEvent(this.worker, {
-              type: EventType.CHECK_USER,
-              timestamp: Date.now(),
-              userId: APP_CONFIG.backstopAddress,
-            });
-          }
+        }
+        if (poolEvent.event.auctionType === AuctionType.Liquidation) {
+          const { estimate: userPositionsEstimate, user } =
+            await this.sorobanHelper.loadUserPositionEstimate(poolEvent.event.user);
+          updateUser(this.db, pool, user, userPositionsEstimate, poolEvent.event.ledger);
+          const { estimate: fillerPositionsEstimate, user: filler } =
+            await this.sorobanHelper.loadUserPositionEstimate(poolEvent.event.from);
+          updateUser(this.db, pool, filler, fillerPositionsEstimate, poolEvent.event.ledger);
+        } else if (poolEvent.event.auctionType === AuctionType.BadDebt) {
+          const { estimate: fillerPositionsEstimate, user: filler } =
+            await this.sorobanHelper.loadUserPositionEstimate(poolEvent.event.from);
+          updateUser(this.db, pool, filler, fillerPositionsEstimate, poolEvent.event.ledger);
+          sendEvent(this.worker, {
+            type: EventType.CHECK_USER,
+            timestamp: Date.now(),
+            userId: APP_CONFIG.backstopAddress,
+          });
         }
         break;
       }

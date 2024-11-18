@@ -49,7 +49,9 @@ export function updateUser(
       updated: ledger,
     };
     db.setUserEntry(new_entry);
-    logger.info(`Updated user entry for ${user.userId} at ledger ${ledger}.`);
+    logger.info(
+      `Updated user entry for ${user.userId} at ledger ${ledger} with health factor: ${new_entry.health_factor}.`
+    );
   } else {
     // user does not have liabilities, remove db entry if it exists
     db.deleteUserEntry(user.userId);
