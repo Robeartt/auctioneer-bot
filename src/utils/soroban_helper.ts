@@ -17,8 +17,10 @@ import {
   Contract,
   Keypair,
   nativeToScVal,
+  Operation,
   scValToNative,
   SorobanRpc,
+  Transaction,
   TransactionBuilder,
   xdr,
 } from '@stellar/stellar-sdk';
@@ -229,9 +231,8 @@ export class SorobanHelper {
     keypair: Keypair
   ): Promise<SorobanRpc.Api.GetSuccessfulTransactionResponse & { txHash: string }> {
     const rpc = new SorobanRpc.Server(this.network.rpc, this.network.opts);
-    const curr_time = Date.now();
-    const account = await rpc.getAccount(keypair.publicKey());
-    const tx = new TransactionBuilder(account, {
+    let account = await rpc.getAccount(keypair.publicKey());
+    let tx = new TransactionBuilder(account, {
       networkPassphrase: this.network.passphrase,
       fee: BASE_FEE,
       timebounds: { minTime: 0, maxTime: Math.floor(Date.now() / 1000) + 5 * 60 * 1000 },
@@ -240,50 +241,80 @@ export class SorobanHelper {
       .build();
 
     logger.info(`Attempting to simulate and submit transaction: ${tx.toXDR()}`);
-    const simResult = await rpc.simulateTransaction(tx);
+    let simResult = await rpc.simulateTransaction(tx);
+
+    if (SorobanRpc.Api.isSimulationRestore(simResult)) {
+      logger.info('Simulation ran into expired entries. Attempting to restore.');
+      account = await rpc.getAccount(keypair.publicKey());
+      const fee = Number(simResult.restorePreamble.minResourceFee) + 1000;
+      const restore_tx = new TransactionBuilder(account, { fee: fee.toString() })
+        .setNetworkPassphrase(this.network.passphrase)
+        .setTimeout(0)
+        .setSorobanData(simResult.restorePreamble.transactionData.build())
+        .addOperation(Operation.restoreFootprint({}))
+        .build();
+      restore_tx.sign(keypair);
+      let restore_result = await this.sendTransaction(restore_tx);
+      logger.info(`Successfully restored. Tx Hash: ${restore_result.txHash}`);
+      account = await rpc.getAccount(keypair.publicKey());
+      tx = new TransactionBuilder(account, {
+        networkPassphrase: this.network.passphrase,
+        fee: BASE_FEE,
+        timebounds: { minTime: 0, maxTime: Math.floor(Date.now() / 1000) + 5 * 60 * 1000 },
+      })
+        .addOperation(xdr.Operation.fromXDR(operation, 'base64'))
+        .build();
+      simResult = await rpc.simulateTransaction(tx);
+    }
+
     if (SorobanRpc.Api.isSimulationSuccess(simResult)) {
       let assembledTx = SorobanRpc.assembleTransaction(tx, simResult).build();
       assembledTx.sign(keypair);
-      let txResponse = await rpc.sendTransaction(assembledTx);
-      while (txResponse.status === 'TRY_AGAIN_LATER' && Date.now() - curr_time < 20000) {
-        await new Promise((resolve) => setTimeout(resolve, 4000));
-        txResponse = await rpc.sendTransaction(assembledTx);
-      }
-      if (txResponse.status !== 'PENDING') {
-        const error = parseError(txResponse);
-        logger.error(
-          `Transaction failed to send: Tx Hash: ${txResponse.hash} Error Result XDR: ${txResponse.errorResult?.toXDR('base64')} Parsed Error: ${ContractErrorType[error.type]}`
-        );
-        throw error;
-      }
-
-      let get_tx_response = await rpc.getTransaction(txResponse.hash);
-      while (get_tx_response.status === 'NOT_FOUND') {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        get_tx_response = await rpc.getTransaction(txResponse.hash);
-      }
-
-      if (get_tx_response.status !== 'SUCCESS') {
-        const error = parseError(get_tx_response);
-        logger.error(
-          `Tx Failed: ${ContractErrorType[error.type]}, Error Result XDR: ${get_tx_response.resultXdr.toXDR('base64')}`
-        );
-
-        throw error;
-      }
-      logger.info(
-        'Transaction successfully submitted: ' +
-          `Ledger: ${get_tx_response.ledger} ` +
-          `Latest Ledger Close Time: ${get_tx_response.latestLedgerCloseTime} ` +
-          `Transaction Result XDR: ${get_tx_response.resultXdr.toXDR('base64')} ` +
-          `Tx Envelope XDR: ${get_tx_response.envelopeXdr.toXDR('base64')}` +
-          `Tx Hash:
-          ${txResponse.hash}`
-      );
-      return { ...get_tx_response, txHash: txResponse.hash };
+      return await this.sendTransaction(assembledTx);
+    } else {
+      const error = parseError(simResult);
+      logger.error(`Tx failed to simlate: ${ContractErrorType[error.type]}`);
+      throw error;
     }
-    const error = parseError(simResult);
-    logger.error(`Tx failed to simlate: ${ContractErrorType[error.type]}`);
-    throw error;
+  }
+
+  private async sendTransaction(
+    transaction: Transaction
+  ): Promise<SorobanRpc.Api.GetSuccessfulTransactionResponse & { txHash: string }> {
+    const rpc = new SorobanRpc.Server(this.network.rpc, this.network.opts);
+    let txResponse = await rpc.sendTransaction(transaction);
+    if (txResponse.status === 'TRY_AGAIN_LATER') {
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+      txResponse = await rpc.sendTransaction(transaction);
+    }
+
+    if (txResponse.status !== 'PENDING') {
+      const error = parseError(txResponse);
+      logger.error(
+        `Transaction failed to send: Tx Hash: ${txResponse.hash} Error Result XDR: ${txResponse.errorResult?.toXDR('base64')} Parsed Error: ${ContractErrorType[error.type]}`
+      );
+      throw error;
+    }
+    let get_tx_response = await rpc.getTransaction(txResponse.hash);
+    while (get_tx_response.status === 'NOT_FOUND') {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      get_tx_response = await rpc.getTransaction(txResponse.hash);
+    }
+
+    if (get_tx_response.status !== 'SUCCESS') {
+      const error = parseError(get_tx_response);
+      logger.error(
+        `Tx Failed: ${ContractErrorType[error.type]}, Error Result XDR: ${get_tx_response.resultXdr.toXDR('base64')}`
+      );
+
+      throw error;
+    }
+    logger.info(
+      'Transaction successfully submitted: ' +
+        `Ledger: ${get_tx_response.ledger}\n` +
+        `Transaction Result XDR: ${get_tx_response.resultXdr.toXDR('base64')}\n` +
+        `Tx Hash: ${txResponse.hash}`
+    );
+    return { ...get_tx_response, txHash: txResponse.hash };
   }
 }
