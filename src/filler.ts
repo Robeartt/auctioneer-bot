@@ -228,13 +228,16 @@ export function managePositions(
       const toMinPosition = reserve.toAssetFromBToken(amount) - filler.minPrimaryCollateral;
       withdrawAmount = withdrawAmount > toMinPosition ? toMinPosition : withdrawAmount;
     }
-    const withdrawnBToken = reserve.toBTokensFromAssetFloor(withdrawAmount);
-    effectiveCollateral -= reserve.toEffectiveAssetFromBTokenFloat(withdrawnBToken) * price;
-    requests.push({
-      request_type: RequestType.WithdrawCollateral,
-      address: reserve.assetId,
-      amount: withdrawAmount,
-    });
+
+    if (withdrawAmount > 0n) {
+      const withdrawnBToken = reserve.toBTokensFromAssetFloor(withdrawAmount);
+      effectiveCollateral -= reserve.toEffectiveAssetFromBTokenFloat(withdrawnBToken) * price;
+      requests.push({
+        request_type: RequestType.WithdrawCollateral,
+        address: reserve.assetId,
+        amount: withdrawAmount,
+      });
+    }
   }
   return requests;
 }

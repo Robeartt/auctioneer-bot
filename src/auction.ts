@@ -2,22 +2,17 @@ import {
   Auction,
   AuctionType,
   FixedMath,
+  Pool,
+  PoolOracle,
   Request,
   RequestType,
-  ScaledAuction,
 } from '@blend-capital/blend-sdk';
 import { getFillerAvailableBalances, getFillerProfitPct } from './filler.js';
 import { APP_CONFIG, Filler } from './utils/config.js';
 import { AuctioneerDatabase } from './utils/db.js';
+import { stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
 import { SorobanHelper } from './utils/soroban_helper.js';
-
-export interface FillCalculation {
-  // The block number to fill the auction at
-  fillBlock: number;
-  // The percent of the auction to fill
-  fillPercent: number;
-}
 
 export interface AuctionFill {
   // The block number to fill the auction at
@@ -48,49 +43,19 @@ export async function calculateAuctionFill(
   db: AuctioneerDatabase
 ): Promise<AuctionFill> {
   try {
-    const relevant_assets = [];
-    switch (auction.type) {
-      case AuctionType.Liquidation:
-        relevant_assets.push(...Array.from(auction.data.lot.keys()));
-        relevant_assets.push(...Array.from(auction.data.bid.keys()));
-        break;
-      case AuctionType.Interest:
-        relevant_assets.push(APP_CONFIG.backstopTokenAddress);
-        break;
-      case AuctionType.BadDebt:
-        relevant_assets.push(...Array.from(auction.data.lot.keys()));
-        relevant_assets.push(APP_CONFIG.backstopTokenAddress);
-        break;
-    }
-    const fillerBalances = await getFillerAvailableBalances(
-      filler,
-      [...new Set(relevant_assets)],
-      sorobanHelper
-    );
+    const pool = await sorobanHelper.loadPool();
+    const poolOracle = await sorobanHelper.loadPoolOracle();
 
-    const auctionValue = await calculateAuctionValue(auction, fillerBalances, sorobanHelper, db);
-    const { fillBlock, fillPercent } = await calculateBlockFillAndPercent(
+    const auctionValue = await calculateAuctionValue(auction, pool, poolOracle, sorobanHelper, db);
+    return await calculateBlockFillAndPercent(
       filler,
       auction,
       auctionValue,
+      pool,
+      poolOracle,
       nextLedger,
       sorobanHelper
     );
-    const [scaledAuction] = auction.scale(fillBlock, fillPercent);
-    const requests = buildFillRequests(scaledAuction, fillPercent, fillerBalances);
-    // estimate the lot value and bid value on the fill block
-    const blockDelay = fillBlock - auction.data.block;
-    const bidScalar = blockDelay <= 200 ? 1 : 1 - Math.max(0, blockDelay - 200) / 200;
-    const lotScalar = blockDelay < 200 ? blockDelay / 200 : 1;
-    const fillCalcLotValue = auctionValue.lotValue * lotScalar * (fillPercent / 100);
-    const fillCalcBidValue = auctionValue.bidValue * bidScalar * (fillPercent / 100);
-    return {
-      block: fillBlock,
-      percent: fillPercent,
-      lotValue: fillCalcLotValue,
-      bidValue: fillCalcBidValue,
-      requests,
-    };
   } catch (e: any) {
     logger.error(`Error calculating auction fill.`, e);
     throw e;
@@ -110,15 +75,41 @@ export async function calculateBlockFillAndPercent(
   filler: Filler,
   auction: Auction,
   auctionValue: AuctionValue,
+  pool: Pool,
+  poolOracle: PoolOracle,
   nextLedger: number,
   sorobanHelper: SorobanHelper
-): Promise<FillCalculation> {
-  // auction value at block 200, or the base auction, with current prices
+): Promise<AuctionFill> {
   let fillBlockDelay = 0;
   let fillPercent = 100;
+  let request: Request[] = [];
 
-  let { effectiveCollateral, effectiveLiabilities, repayableLiabilities, lotValue, bidValue } =
-    auctionValue;
+  // get relevant assets for the auction
+  let requests: Request[] = [];
+  const relevant_assets = [];
+  switch (auction.type) {
+    case AuctionType.Liquidation:
+      relevant_assets.push(...Array.from(auction.data.lot.keys()));
+      relevant_assets.push(...Array.from(auction.data.bid.keys()));
+      relevant_assets.push(filler.primaryAsset);
+      break;
+    case AuctionType.Interest:
+      relevant_assets.push(APP_CONFIG.backstopTokenAddress);
+      break;
+    case AuctionType.BadDebt:
+      relevant_assets.push(...Array.from(auction.data.lot.keys()));
+      relevant_assets.push(APP_CONFIG.backstopTokenAddress);
+      relevant_assets.push(filler.primaryAsset);
+      break;
+  }
+  const fillerBalances = await getFillerAvailableBalances(
+    filler,
+    [...new Set(relevant_assets)],
+    sorobanHelper
+  );
+
+  // auction value is the full auction
+  let { effectiveCollateral, effectiveLiabilities, lotValue, bidValue } = auctionValue;
 
   // find the block delay where the auction meets the required profit percentage
   const profitPercent = getFillerProfitPct(filler, APP_CONFIG.profits ?? [], auction.data);
@@ -131,8 +122,11 @@ export async function calculateBlockFillAndPercent(
   }
   fillBlockDelay = Math.min(Math.max(Math.ceil(fillBlockDelay), 0), 400);
   // apply force fill auction boundries to profit calculations
-  if (auction.type === AuctionType.Liquidation && filler.forceFill) {
-    fillBlockDelay = Math.min(fillBlockDelay, 198);
+  if (
+    (auction.type === AuctionType.Liquidation || auction.type === AuctionType.BadDebt) &&
+    filler.forceFill
+  ) {
+    fillBlockDelay = Math.min(fillBlockDelay, 250);
   } else if (auction.type === AuctionType.Interest && filler.forceFill) {
     fillBlockDelay = Math.min(fillBlockDelay, 350);
   }
@@ -141,80 +135,134 @@ export async function calculateBlockFillAndPercent(
     fillBlockDelay = Math.min(nextLedger - auction.data.block, 400);
   }
 
-  const bidScalarAtFill = fillBlockDelay <= 200 ? 1 : 1 - Math.max(0, fillBlockDelay - 200) / 200;
-  const lotScalarAtFill = fillBlockDelay < 200 ? fillBlockDelay / 200 : 1;
+  const bidScalar = fillBlockDelay <= 200 ? 1 : 1 - Math.max(0, fillBlockDelay - 200) / 200;
+  const lotScalar = fillBlockDelay < 200 ? fillBlockDelay / 200 : 1;
+
+  const [scaledAuction] = auction.scale(auction.data.block + fillBlockDelay, 100);
 
   // require that the filler can fully fill interest auctions
   if (auction.type === AuctionType.Interest) {
-    const cometLpTokenBalance = FixedMath.toFloat(
-      await sorobanHelper.simBalance(APP_CONFIG.backstopTokenAddress, filler.keypair.publicKey()),
-      7
-    );
-    const cometLpBidBase = FixedMath.toFloat(
-      auction.data.bid.get(APP_CONFIG.backstopTokenAddress) ?? 0n,
-      7
-    );
-    const cometLpBid = cometLpBidBase * bidScalarAtFill;
+    const cometLpTokenBalance = fillerBalances.get(APP_CONFIG.backstopTokenAddress) ?? 0n;
+    const cometLpBid = scaledAuction.data.bid.get(APP_CONFIG.backstopTokenAddress) ?? 0n;
     if (cometLpBid > cometLpTokenBalance) {
-      const additionalCometLp = cometLpBid - cometLpTokenBalance;
-      const bidStepSize = cometLpBidBase / 200;
+      const additionalCometLp = FixedMath.toFloat(cometLpBid - cometLpTokenBalance, 7);
+      const bidStepSize = FixedMath.toFloat(cometLpBid, 7) / 200;
       if (additionalCometLp >= 0 && bidStepSize > 0) {
         const additionalDelay = Math.ceil(additionalCometLp / bidStepSize);
-        fillBlockDelay = Math.max(200, fillBlockDelay) + additionalDelay;
-        fillBlockDelay = Math.min(fillBlockDelay, 400);
+        fillBlockDelay = Math.min(400, fillBlockDelay + additionalDelay);
       }
     }
   } else if (auction.type === AuctionType.Liquidation || auction.type === AuctionType.BadDebt) {
-    // require that filler meets minimum health factor requirements
     const { estimate: fillerPositionEstimates } = await sorobanHelper.loadUserPositionEstimate(
       filler.keypair.publicKey()
     );
     // inflate minHealthFactor slightly, to allow for the unwind logic to unwind looped positions safely
+    const additionalLiabilities = effectiveLiabilities * bidScalar;
+    const additionalCollateral = effectiveCollateral * lotScalar;
     const safeHealthFactor = filler.minHealthFactor * 1.1;
-    const additionalLiabilities = effectiveLiabilities * bidScalarAtFill - repayableLiabilities;
-    const additionalCollateral = effectiveCollateral * lotScalarAtFill;
-    const additionalCollateralReq = additionalLiabilities * safeHealthFactor;
-    if (additionalCollateral < additionalCollateralReq) {
-      const excessLiabilities = additionalCollateralReq - additionalCollateral;
-      const liabilityLimitToHF =
-        fillerPositionEstimates.totalEffectiveCollateral / safeHealthFactor -
-        fillerPositionEstimates.totalEffectiveLiabilities;
+    let limitToHF =
+      (fillerPositionEstimates.totalEffectiveCollateral + additionalCollateral) / safeHealthFactor -
+      (fillerPositionEstimates.totalEffectiveLiabilities + additionalLiabilities);
+    let liabilitiesRepaid = 0;
+    let collateralAdded = 0;
 
-      logger.info(
-        `Auction does not add enough collateral to maintain health factor. Additional Collateral: ${additionalCollateral}, Additional Liabilities: ${additionalLiabilities}, Repaid Liabilities: ${repayableLiabilities}, Excess Liabilities to HF: ${excessLiabilities}, Liability Limit to HF: ${liabilityLimitToHF}`
-      );
+    logger.info(
+      `Auction value: ${stringify(auctionValue)}. Bid scalar: ${bidScalar}. Lot scalar: ${lotScalar}. Limit to HF: ${limitToHF}`
+    );
 
-      if (liabilityLimitToHF <= 0) {
-        // filler can't take on additional liabilities. Push back fill block until more collateral
-        // is received than liabilities taken on, or no liabilities are taken on
-        const liabilityBlockDecrease =
-          Math.ceil(100 * (excessLiabilities / effectiveLiabilities)) / 0.5;
-        fillBlockDelay = Math.min(Math.max(200, fillBlockDelay) + liabilityBlockDecrease, 400);
-        logger.info(
-          `Unable to fill auction at expected profit due to insufficient collateral, pushing fill block an extra ${liabilityBlockDecrease} back to ${fillBlockDelay}`
+    // attempt to repay any liabilities the filler has took on from the bids
+    for (const [assetId, amount] of scaledAuction.data.bid) {
+      const balance = fillerBalances.get(assetId) ?? 0n;
+      if (balance > 0n) {
+        const reserve = pool.reserves.get(assetId);
+        const oraclePrice = poolOracle.getPriceFloat(assetId);
+        if (reserve !== undefined && oraclePrice !== undefined) {
+          // 100n prevents dust positions from being created, and is deducted from the repaid liability
+          const amountAsUnderlying = reserve.toAssetFromDToken(amount) + 100n;
+          const repaidLiability = amountAsUnderlying <= balance ? amountAsUnderlying : balance;
+          const effectiveLiability =
+            FixedMath.toFloat(repaidLiability - 100n, reserve.config.decimals) *
+            reserve.getLiabilityFactor() *
+            oraclePrice;
+          limitToHF += effectiveLiability;
+          liabilitiesRepaid += effectiveLiability;
+          fillerBalances.set(assetId, balance - repaidLiability);
+          requests.push({
+            request_type: RequestType.Repay,
+            address: assetId,
+            amount: repaidLiability,
+          });
+        }
+      }
+    }
+
+    // withdraw any collateral that has no CF to reduce position count
+    if (auction.type === AuctionType.Liquidation) {
+      for (const [assetId] of scaledAuction.data.lot) {
+        const reserve = pool.reserves.get(assetId);
+        if (reserve !== undefined && reserve.getCollateralFactor() === 0) {
+          requests.push({
+            request_type: RequestType.WithdrawCollateral,
+            address: assetId,
+            amount: BigInt('9223372036854775807'),
+          });
+        }
+      }
+    }
+
+    if (limitToHF < 0) {
+      // if we still are under the health factor, we need to try and add more of the fillers primary asset as collateral
+      const primaryBalance = fillerBalances.get(filler.primaryAsset) ?? 0n;
+      const primaryReserve = pool.reserves.get(filler.primaryAsset);
+      const primaryOraclePrice = poolOracle.getPriceFloat(filler.primaryAsset);
+      if (primaryReserve !== undefined && primaryOraclePrice !== undefined && primaryBalance > 0n) {
+        const primaryCollateralRequired = Math.ceil(
+          (Math.abs(limitToHF) / (primaryReserve.getCollateralFactor() * primaryOraclePrice)) *
+            safeHealthFactor
         );
-      } else if (excessLiabilities > liabilityLimitToHF) {
-        // reduce fill percent to the point where the filler can take on the liabilities
-        fillPercent = Math.floor((liabilityLimitToHF / excessLiabilities) * 100);
+        const primaryBalFloat = FixedMath.toFloat(primaryBalance, primaryReserve.config.decimals);
+        const primaryDeposit = Math.min(primaryBalFloat, primaryCollateralRequired);
+        const collateral =
+          primaryDeposit * primaryReserve.getCollateralFactor() * primaryOraclePrice;
+        limitToHF += collateral / safeHealthFactor;
+        collateralAdded += collateral;
+        requests.push({
+          request_type: RequestType.SupplyCollateral,
+          address: filler.primaryAsset,
+          amount: FixedMath.toFixed(primaryDeposit, primaryReserve.config.decimals),
+        });
+      }
+
+      if (limitToHF < 0) {
+        const absLimitToHF = Math.abs(limitToHF);
+        // if we still are under the health factor, we need to either reduce the fill percent or push back the fill block
+        const preFillLimitToHF =
+          fillerPositionEstimates.totalEffectiveCollateral / safeHealthFactor -
+          fillerPositionEstimates.totalEffectiveLiabilities;
+        if (preFillLimitToHF <= 0) {
+          // filler can't take on additional liabilities. Push back fill block until more collateral
+          // is received than liabilities taken on, or no liabilities are taken on
+          const blockDelay =
+            Math.ceil(100 * (absLimitToHF / auctionValue.effectiveLiabilities)) / 0.5;
+          fillBlockDelay = Math.min(fillBlockDelay + blockDelay, 400);
+          logger.info(
+            `Unable to fill auction at expected profit due to insufficient health factor. Auction fill exceeds HF borrow limit by $${limitToHF}, adding block delay of ${blockDelay}.`
+          );
+        } else if (preFillLimitToHF < absLimitToHF) {
+          // reduce fill percent to the point where the filler can take on the liabilities. This can be approximated by
+          // the ratio of the pre fill borrow limit over the total incoming liabilities. This overapproximates when repayments occur.
+          fillPercent = Math.floor(
+            Math.min(1, preFillLimitToHF / (absLimitToHF + preFillLimitToHF)) * 100
+          );
+          logger.info(
+            `Unable to fill auction at 100% due to insufficient health factor. Auction fill exceeds HF borrow limit by $${limitToHF}. Dropping fill percent to ${fillPercent}.`
+          );
+        }
+        // if absLimitToHF > preFillLimitToHF, the account will still maintain the min health factor
       }
     }
   }
-  return { fillBlock: auction.data.block + fillBlockDelay, fillPercent };
-}
 
-/**
- * Build requests to fill the auction and repay the liabilities.
- * @param scaledAuction - The scaled auction to build the fill requests for
- * @param fillPercent - The percent to fill the auction
- * @param sorobanHelper - The soroban helper to use for the calculation
- * @returns
- */
-export function buildFillRequests(
-  scaledAuction: ScaledAuction,
-  fillPercent: number,
-  fillerBalances: Map<string, bigint>
-): Request[] {
-  let fillRequests: Request[] = [];
   let requestType: RequestType;
   switch (scaledAuction.type) {
     case AuctionType.Liquidation:
@@ -227,43 +275,36 @@ export function buildFillRequests(
       requestType = RequestType.FillBadDebtAuction;
       break;
   }
-  fillRequests.push({
+  // push the fill request on the front of the list
+  requests.unshift({
     request_type: requestType,
-    address: scaledAuction.user,
+    address: auction.user,
     amount: BigInt(fillPercent),
   });
 
-  if (scaledAuction.type === AuctionType.Interest) {
-    return fillRequests;
-  }
-
-  // attempt to repay any liabilities the filler has took on from the bids
-  // if this fails for some reason, still continue with the fill
-  for (const [assetId] of scaledAuction.data.bid) {
-    const fillerBalance = fillerBalances.get(assetId) ?? 0n;
-    if (fillerBalance > 0n) {
-      fillRequests.push({
-        request_type: RequestType.Repay,
-        address: assetId,
-        amount: BigInt(fillerBalance),
-      });
-    }
-  }
-  return fillRequests;
+  return {
+    block: auction.data.block + fillBlockDelay,
+    percent: fillPercent,
+    requests,
+    lotValue: lotValue * lotScalar * (fillPercent / 100),
+    bidValue: bidValue * bidScalar * (fillPercent / 100),
+  };
 }
 
 /**
  * Calculate the effective collateral, lot value, effective liabilities, and bid value for an auction.
  *
  * @param auction - The auction to calculate the values for
- * @param fillerBalances - The balances of the filler
+ * @param pool - The pool to use for fetching reserve data
+ * @param poolOracle - The pool oracle to use for fetching asset prices
  * @param sorobanHelper - A helper to use for loading ledger data
  * @param db - The database to use for fetching asset prices
  * @returns The calculated values, or 0 for all values if it is unable to calculate them
  */
 export async function calculateAuctionValue(
   auction: Auction,
-  fillerBalances: Map<string, bigint>,
+  pool: Pool,
+  poolOracle: PoolOracle,
   sorobanHelper: SorobanHelper,
   db: AuctioneerDatabase
 ): Promise<AuctionValue> {
@@ -272,8 +313,6 @@ export async function calculateAuctionValue(
   let effectiveLiabilities = 0;
   let repayableLiabilities = 0;
   let bidValue = 0;
-  const pool = await sorobanHelper.loadPool();
-  const poolOracle = await sorobanHelper.loadPoolOracle();
   const reserves = pool.reserves;
   for (const [assetId, amount] of auction.data.lot) {
     if (auction.type === AuctionType.Liquidation || auction.type === AuctionType.Interest) {
@@ -300,7 +339,7 @@ export async function calculateAuctionValue(
           `Unexpected bad debt auction. Lot contains asset other than the backstop token: ${assetId}`
         );
       }
-      bidValue += await valueBackstopTokenInUSDC(sorobanHelper, amount);
+      lotValue += await valueBackstopTokenInUSDC(sorobanHelper, amount);
     } else {
       throw new Error(`Failed to value lot asset: ${assetId}`);
     }
@@ -319,19 +358,6 @@ export async function calculateAuctionValue(
       }
       effectiveLiabilities += reserve.toEffectiveAssetFromDTokenFloat(amount) * oraclePrice;
       bidValue += reserve.toAssetFromDTokenFloat(amount) * (dbPrice ?? oraclePrice);
-      const fillerBalance = fillerBalances.get(assetId) ?? 0n;
-      if (fillerBalance > 0) {
-        const liabilityAmount = reserve.toAssetFromDToken(amount);
-        const repaymentAmount = liabilityAmount <= fillerBalance ? liabilityAmount : fillerBalance;
-        const repayableLiability =
-          FixedMath.toFloat(repaymentAmount, reserve.config.decimals) *
-          reserve.getLiabilityFactor() *
-          oraclePrice;
-        repayableLiabilities += repayableLiability;
-        logger.info(
-          `Filler can repay ${assetId} amount ${FixedMath.toFloat(repaymentAmount)} to cover liabilities: ${repayableLiability}`
-        );
-      }
     } else if (auction.type === AuctionType.Interest) {
       if (assetId !== APP_CONFIG.backstopTokenAddress) {
         throw new Error(

@@ -15,7 +15,7 @@ export function isLiquidatable(user: PositionsEstimate): boolean {
   if (
     user.totalEffectiveLiabilities > 0 &&
     user.totalEffectiveCollateral > 0 &&
-    user.totalEffectiveCollateral / user.totalEffectiveLiabilities < 0.995
+    user.totalEffectiveCollateral / user.totalEffectiveLiabilities < 0.998
   ) {
     return true;
   }
@@ -43,8 +43,8 @@ export function calculateLiquidationPercent(user: PositionsEstimate): bigint {
   const avgInverseLF = user.totalEffectiveLiabilities / user.totalBorrowed;
   const avgCF = user.totalEffectiveCollateral / user.totalSupplied;
   const estIncentive = 1 + (1 - avgCF / avgInverseLF) / 2;
-  const numerator = user.totalEffectiveLiabilities * 1.1 - user.totalEffectiveCollateral;
-  const denominator = avgInverseLF * 1.1 - avgCF * estIncentive;
+  const numerator = user.totalEffectiveLiabilities * 1.06 - user.totalEffectiveCollateral;
+  const denominator = avgInverseLF * 1.06 - avgCF * estIncentive;
   const liqPercent = BigInt(
     Math.min(Math.round((numerator / denominator / user.totalBorrowed) * 100), 100)
   );

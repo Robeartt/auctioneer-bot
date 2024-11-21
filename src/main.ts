@@ -103,6 +103,7 @@ async function main() {
       logger.error(`Error in collector`, e);
     }
   }, 1000);
+  console.log('Collector polling for events...');
 }
 
 main().catch((error) => {
