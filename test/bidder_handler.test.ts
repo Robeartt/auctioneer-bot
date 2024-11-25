@@ -1,6 +1,6 @@
-import { AuctionData } from '@blend-capital/blend-sdk';
+import { Auction } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
-import { calculateBlockFillAndPercent, FillCalculation } from '../src/auction';
+import { AuctionFill, calculateAuctionFill } from '../src/auction';
 import { BidderHandler } from '../src/bidder_handler';
 import { AuctionBid, BidderSubmissionType, BidderSubmitter } from '../src/bidder_submitter';
 import { AppEvent, EventType, LedgerEvent } from '../src/events';
@@ -58,8 +58,8 @@ describe('BidderHandler', () => {
   let mockedBidderSubmitter: jest.Mocked<BidderSubmitter>;
   let mockedSorobanHelper: jest.Mocked<SorobanHelper> =
     new SorobanHelper() as jest.Mocked<SorobanHelper>;
-  let mockedCalcBlockAndFillPercent = calculateBlockFillAndPercent as jest.MockedFunction<
-    typeof calculateBlockFillAndPercent
+  let mockedCalcAuctionFill = calculateAuctionFill as jest.MockedFunction<
+    typeof calculateAuctionFill
   >;
   let mockedSendSlackNotif = sendSlackNotification as jest.MockedFunction<
     typeof sendSlackNotification
@@ -92,17 +92,21 @@ describe('BidderHandler', () => {
     };
     db.setAuctionEntry(auction_1);
     db.setAuctionEntry(auction_2);
-    let auction_data: AuctionData = {
-      bid: new Map<string, bigint>([['USD', BigInt(123456)]]),
-      lot: new Map<string, bigint>([['BTC', BigInt(456)]]),
-      block: ledger - 1,
+    mockedSorobanHelper.loadAuction.mockResolvedValue(
+      new Auction('teapot', AuctionType.Liquidation, {
+        bid: new Map<string, bigint>(),
+        lot: new Map<string, bigint>(),
+        block: ledger - 1,
+      })
+    );
+    let fill_calc: AuctionFill = {
+      block: 1200,
+      percent: 50,
+      lotValue: 1000,
+      bidValue: 900,
+      requests: [],
     };
-    mockedSorobanHelper.loadAuction.mockResolvedValue(auction_data);
-    let fill_calc: FillCalculation = {
-      fillBlock: 1200,
-      fillPercent: 50,
-    };
-    mockedCalcBlockAndFillPercent.mockResolvedValue(fill_calc);
+    mockedCalcAuctionFill.mockResolvedValue(fill_calc);
 
     const appEvent: AppEvent = { type: EventType.LEDGER, ledger } as LedgerEvent;
     await bidderHandler.processEvent(appEvent);
@@ -115,7 +119,7 @@ describe('BidderHandler', () => {
     expect(new_auction_2?.auction_type).toEqual(auction_2.auction_type);
     expect(new_auction_2?.filler).toEqual(auction_2.filler);
     expect(new_auction_2?.start_block).toEqual(auction_2.start_block);
-    expect(new_auction_2?.fill_block).toEqual(fill_calc.fillBlock);
+    expect(new_auction_2?.fill_block).toEqual(fill_calc.block);
     expect(new_auction_2?.updated).toEqual(ledger);
     expect(mockedSendSlackNotif).toHaveBeenCalledTimes(1);
 
@@ -145,35 +149,40 @@ describe('BidderHandler', () => {
     };
     db.setAuctionEntry(auction_1);
     db.setAuctionEntry(auction_2);
-    let auction_data: AuctionData = {
-      bid: new Map<string, bigint>([['USD', BigInt(123456)]]),
-      lot: new Map<string, bigint>([['BTC', BigInt(456)]]),
-      block: ledger - 1,
+    mockedSorobanHelper.loadAuction.mockResolvedValue(
+      new Auction('teapot', AuctionType.Liquidation, {
+        bid: new Map<string, bigint>(),
+        lot: new Map<string, bigint>(),
+        block: ledger - 1,
+      })
+    );
+    let fill_calc_1: AuctionFill = {
+      block: 1200,
+      percent: 50,
+      lotValue: 1000,
+      bidValue: 900,
+      requests: [],
     };
-    mockedSorobanHelper.loadAuction.mockResolvedValue(auction_data);
-    let fill_calc_1: FillCalculation = {
-      fillBlock: 1200,
-      fillPercent: 50,
+    let fill_calc_2: AuctionFill = {
+      block: 1002,
+      percent: 60,
+      lotValue: 1000,
+      bidValue: 900,
+      requests: [],
     };
-    let fill_calc_2: FillCalculation = {
-      fillBlock: 1002,
-      fillPercent: 60,
-    };
-    mockedCalcBlockAndFillPercent
-      .mockResolvedValueOnce(fill_calc_1)
-      .mockResolvedValueOnce(fill_calc_2);
+    mockedCalcAuctionFill.mockResolvedValueOnce(fill_calc_1).mockResolvedValueOnce(fill_calc_2);
 
     const appEvent: AppEvent = { type: EventType.LEDGER, ledger } as LedgerEvent;
     await bidderHandler.processEvent(appEvent);
 
     // validate auction 1 is updated
     let new_auction_1 = db.getAuctionEntry(auction_1.user_id, auction_1.auction_type);
-    expect(new_auction_1?.fill_block).toEqual(fill_calc_1.fillBlock);
+    expect(new_auction_1?.fill_block).toEqual(fill_calc_1.block);
     expect(new_auction_1?.updated).toEqual(ledger);
 
     // validate auction 2 is updated
     let new_auction_2 = db.getAuctionEntry(auction_2.user_id, auction_2.auction_type);
-    expect(new_auction_2?.fill_block).toEqual(fill_calc_2.fillBlock);
+    expect(new_auction_2?.fill_block).toEqual(fill_calc_2.block);
     expect(new_auction_2?.updated).toEqual(ledger);
   });
 
@@ -197,30 +206,36 @@ describe('BidderHandler', () => {
     };
     db.setAuctionEntry(auction_1);
     db.setAuctionEntry(auction_2);
-    let auction_data: AuctionData = {
-      bid: new Map<string, bigint>([['USD', BigInt(123456)]]),
-      lot: new Map<string, bigint>([['BTC', BigInt(456)]]),
-      block: ledger - 1,
+    mockedSorobanHelper.loadAuction.mockResolvedValue(
+      new Auction('teapot', AuctionType.Liquidation, {
+        bid: new Map<string, bigint>(),
+        lot: new Map<string, bigint>(),
+        block: ledger - 1,
+      })
+    );
+    let fill_calc_1: AuctionFill = {
+      block: 1001,
+      percent: 50,
+      lotValue: 1000,
+      bidValue: 900,
+      requests: [],
     };
-    mockedSorobanHelper.loadAuction.mockResolvedValue(auction_data);
-    let fill_calc_1: FillCalculation = {
-      fillBlock: 1001,
-      fillPercent: 50,
+
+    let fill_calc_2: AuctionFill = {
+      block: 995,
+      percent: 60,
+      lotValue: 1000,
+      bidValue: 900,
+      requests: [],
     };
-    let fill_calc_2: FillCalculation = {
-      fillBlock: 995,
-      fillPercent: 60,
-    };
-    mockedCalcBlockAndFillPercent
-      .mockResolvedValueOnce(fill_calc_1)
-      .mockResolvedValueOnce(fill_calc_2);
+    mockedCalcAuctionFill.mockResolvedValueOnce(fill_calc_1).mockResolvedValueOnce(fill_calc_2);
 
     const appEvent: AppEvent = { type: EventType.LEDGER, ledger } as LedgerEvent;
     await bidderHandler.processEvent(appEvent);
 
     // validate auction 1 is placed on submission queue
     let new_auction_1 = db.getAuctionEntry(auction_1.user_id, auction_1.auction_type);
-    expect(new_auction_1?.fill_block).toEqual(fill_calc_1.fillBlock);
+    expect(new_auction_1?.fill_block).toEqual(fill_calc_1.block);
     expect(new_auction_1?.updated).toEqual(ledger);
 
     let submission_1: AuctionBid = {
@@ -232,7 +247,7 @@ describe('BidderHandler', () => {
 
     // validate auction 2 is placed on submission queue
     let new_auction_2 = db.getAuctionEntry(auction_2.user_id, auction_2.auction_type);
-    expect(new_auction_2?.fill_block).toEqual(fill_calc_2.fillBlock);
+    expect(new_auction_2?.fill_block).toEqual(fill_calc_2.block);
     expect(new_auction_2?.updated).toEqual(ledger);
 
     let submission_2: AuctionBid = {
@@ -254,17 +269,21 @@ describe('BidderHandler', () => {
       updated: ledger - 1,
     };
     db.setAuctionEntry(auction_1);
-    let auction_data: AuctionData = {
-      bid: new Map<string, bigint>([['USD', BigInt(123456)]]),
-      lot: new Map<string, bigint>([['BTC', BigInt(456)]]),
-      block: ledger - 1,
+    mockedSorobanHelper.loadAuction.mockResolvedValue(
+      new Auction('teapot', AuctionType.Liquidation, {
+        bid: new Map<string, bigint>(),
+        lot: new Map<string, bigint>(),
+        block: ledger - 1,
+      })
+    );
+    let fill_calc_1: AuctionFill = {
+      block: 1001,
+      percent: 50,
+      lotValue: 1000,
+      bidValue: 900,
+      requests: [],
     };
-    mockedSorobanHelper.loadAuction.mockResolvedValue(auction_data);
-    let fill_calc_1: FillCalculation = {
-      fillBlock: 1001,
-      fillPercent: 50,
-    };
-    mockedCalcBlockAndFillPercent.mockResolvedValue(fill_calc_1);
+    mockedCalcAuctionFill.mockResolvedValue(fill_calc_1);
     mockedBidderSubmitter.containsAuction.mockReturnValue(true);
 
     const appEvent: AppEvent = { type: EventType.LEDGER, ledger } as LedgerEvent;
@@ -297,19 +316,23 @@ describe('BidderHandler', () => {
     };
     db.setAuctionEntry(auction_1);
     db.setAuctionEntry(auction_2);
-    let auction_data: AuctionData = {
-      bid: new Map<string, bigint>([['USD', BigInt(123456)]]),
-      lot: new Map<string, bigint>([['BTC', BigInt(456)]]),
-      block: ledger - 1,
-    };
     mockedSorobanHelper.loadAuction
-      .mockRejectedValueOnce(new Error('Teapot'))
-      .mockResolvedValueOnce(auction_data);
-    let fill_calc_2: FillCalculation = {
-      fillBlock: 1002,
-      fillPercent: 60,
+      .mockRejectedValueOnce(new Error('teapot'))
+      .mockResolvedValueOnce(
+        new Auction('teapot', AuctionType.Liquidation, {
+          bid: new Map<string, bigint>(),
+          lot: new Map<string, bigint>(),
+          block: ledger - 1,
+        })
+      );
+    let fill_calc_2: AuctionFill = {
+      block: 1002,
+      percent: 60,
+      lotValue: 1000,
+      bidValue: 900,
+      requests: [],
     };
-    mockedCalcBlockAndFillPercent.mockResolvedValue(fill_calc_2);
+    mockedCalcAuctionFill.mockResolvedValue(fill_calc_2);
 
     const appEvent: AppEvent = { type: EventType.LEDGER, ledger } as LedgerEvent;
     await bidderHandler.processEvent(appEvent);
@@ -322,7 +345,7 @@ describe('BidderHandler', () => {
 
     // validate auction 2 is updated
     let new_auction_2 = db.getAuctionEntry(auction_2.user_id, auction_2.auction_type);
-    expect(new_auction_2?.fill_block).toEqual(fill_calc_2.fillBlock);
+    expect(new_auction_2?.fill_block).toEqual(fill_calc_2.block);
     expect(new_auction_2?.updated).toEqual(ledger);
   });
 });

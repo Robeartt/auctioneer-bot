@@ -10,7 +10,7 @@ import {
 import { Keypair } from '@stellar/stellar-sdk';
 import { canFillerBid, getFillerProfitPct, managePositions } from '../src/filler';
 import { AuctionProfit, Filler } from '../src/utils/config';
-import { mockedPool } from './helpers/mocks';
+import { mockPool } from './helpers/mocks';
 
 jest.mock('../src/utils/config.js', () => {
   return {
@@ -286,7 +286,7 @@ describe('filler', () => {
     });
   });
   describe('managePositions', () => {
-    const assets = mockedPool.config.reserveList;
+    const assets = mockPool.config.reserveList;
     const mockOracle = new PoolOracle(
       'CATKK5ZNJCKQQWTUWIUFZMY6V6MOQUGSTFSXMNQZHVJHYF7GVV36FB3Y',
       new Map<string, PriceData>([
@@ -325,7 +325,7 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(0, 7)],
       ]);
 
-      const requests = managePositions(filler, mockedPool, mockOracle, positions, balances);
+      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
 
       const expectedRequests: Request[] = [
         {
@@ -357,7 +357,7 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(0, 7)],
       ]);
 
-      const requests = managePositions(filler, mockedPool, mockOracle, positions, balances);
+      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
 
       const expectedRequests: Request[] = [
         {
@@ -384,7 +384,7 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(0, 7)],
       ]);
 
-      const requests = managePositions(filler, mockedPool, mockOracle, positions, balances);
+      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
 
       const expectedRequests: Request[] = [
         {
@@ -412,7 +412,7 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(0, 7)],
       ]);
 
-      const requests = managePositions(filler, mockedPool, mockOracle, positions, balances);
+      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
       // return minimum health factor back to 1.5
       filler.minHealthFactor = 1.5;
 
@@ -446,7 +446,7 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(0, 7)],
       ]);
 
-      const requests = managePositions(filler, mockedPool, mockOracle, positions, balances);
+      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
 
       const expectedRequests: Request[] = [
         {
@@ -476,7 +476,7 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(0, 7)],
       ]);
 
-      const requests = managePositions(filler, mockedPool, mockOracle, positions, balances);
+      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
 
       const expectedRequests: Request[] = [
         {
@@ -514,7 +514,7 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(1, 7)],
       ]);
 
-      const requests = managePositions(filler, mockedPool, mockOracle, positions, balances);
+      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
 
       const expectedRequests: Request[] = [
         {
@@ -558,7 +558,7 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(1, 7)],
       ]);
 
-      const requests = managePositions(filler, mockedPool, mockOracle, positions, balances);
+      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
 
       const expectedRequests: Request[] = [
         {

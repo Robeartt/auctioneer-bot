@@ -113,7 +113,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         this.db.setFilledAuctionEntry({
           tx_hash: result.txHash,
           filler: auctionBid.auctionEntry.filler,
-          user_id: auctionBid.auctionEntry.filler,
+          user_id: auctionBid.auctionEntry.user_id,
           auction_type: auctionBid.auctionEntry.auction_type,
           bid: scaledAuction.data.bid,
           bid_total: fill.bidValue,
