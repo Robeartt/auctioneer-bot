@@ -16,6 +16,8 @@ import { stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
 import { sendEvent } from './utils/messages.js';
 
+let startup_ledger = 0;
+
 export async function runCollector(
   worker: ChildProcess,
   bidder: ChildProcess,
@@ -40,8 +42,15 @@ export async function runCollector(
     };
     sendEvent(bidder, ledger_event);
 
+    // determine ledgers since bot was started to send long running work events
+    // this staggers the events from different bots running on the same pool
+    if (startup_ledger === 0) {
+      startup_ledger = latestLedger;
+    }
+    const ledgersProcessed = latestLedger - startup_ledger;
+
     // send long running work events to worker
-    if (latestLedger % 10 === 0) {
+    if (ledgersProcessed % 10 === 0) {
       // approx every minute
       const event: PriceUpdateEvent = {
         type: EventType.PRICE_UPDATE,
@@ -49,7 +58,7 @@ export async function runCollector(
       };
       sendEvent(worker, event);
     }
-    if (latestLedger % 60 === 0) {
+    if (ledgersProcessed % 60 === 0) {
       // approx every 5m
       // send an oracle scan event
       const event: OracleScanEvent = {
@@ -58,7 +67,7 @@ export async function runCollector(
       };
       sendEvent(worker, event);
     }
-    if (latestLedger % 1203 === 0) {
+    if (ledgersProcessed % 1203 === 0) {
       // approx every 2hr
       // send a user update event to update any users that have not been updated in ~2 weeks
       const event: UserRefreshEvent = {
@@ -68,7 +77,7 @@ export async function runCollector(
       };
       sendEvent(worker, event);
     }
-    if (latestLedger % 1207 === 0) {
+    if (ledgersProcessed % 1207 === 0) {
       // approx every 2hr
       // send a liq scan event
       const event: LiqScanEvent = {

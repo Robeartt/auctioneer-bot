@@ -66,8 +66,8 @@ The `fillers` array contains configurations for individual filler accounts. The 
 | `name` | A unique name for this filler account. Used in logs and slack notifications. |
 | `keypair` | The secret key for this filler account. **Keep this secret and secure!** |
 | `primaryAsset` | The primary asset the filler will use as collateral in the pool. | 
-| `defaultProfitPct` | The default profit percentage required for the filler to bid on an auction. |
-| `minHealthFactor` | The minimum health factor the filler will take on during liquidation and bad debt auctions. |
+| `defaultProfitPct` | The default profit percentage required for the filler to bid on an auction, as a decimal. (e.g. 0.08 = 8%) |
+| `minHealthFactor` | The minimum health factor the filler will take on during liquidation and bad debt auctions, as calculated by `collateral / liabilities`. |
 | `minPrimaryCollateral` | The minimum amount of the primary asset the Filler will maintain as collateral in the pool. |
 | `forceFill` | Boolean flag to indicate if the bot should force fill auctions even if profit expectations aren't met to ensure pool health. |
 | `supportedBid` | An array of asset addresses that this filler bot is allowed to bid with. Bids are taken as additional liabilities (dTokens) for liquidation and bad debt auctions, and tokens for interest auctions. Must include the `backstopTokenAddress` to bid on interest auctions. |
@@ -97,7 +97,7 @@ Each profit entry has the following fields:
 
 | Field | Description |
 |-------|-------------|
-| `profitPct` | The profit percentage required to bid for the auction. |
+| `profitPct` | The profit percentage required to bid for the auction, as a decimal. (e.g. 0.08 = 8%) |
 | `supportedBid` | An array of asset addresses that the auction bid can contain for this `profitPct` to be used. If any auction bid asset exists outside this list, the `profitPct` will not be used. |
 | `supportedLot` | An array of asset addresses that the auction lot can contain for this `profitPct` to be used. If any auction lot asset exists outside this list, the `profitPct` will not be used. |
 
