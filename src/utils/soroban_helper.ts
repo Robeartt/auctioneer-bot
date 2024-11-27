@@ -18,8 +18,8 @@ import {
   Keypair,
   nativeToScVal,
   Operation,
+  rpc,
   scValToNative,
-  SorobanRpc,
   Transaction,
   TransactionBuilder,
   xdr,
@@ -51,8 +51,8 @@ export class SorobanHelper {
 
   async loadLatestLedger(): Promise<number> {
     try {
-      let rpc = new SorobanRpc.Server(this.network.rpc, this.network.opts);
-      let ledger = await rpc.getLatestLedger();
+      let stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
+      let ledger = await stellarRpc.getLatestLedger();
       return ledger.sequence;
     } catch (e) {
       logger.error(`Error loading latest ledger: ${e}`);
@@ -109,12 +109,12 @@ export class SorobanHelper {
 
   async loadAuction(userId: string, auctionType: number): Promise<Auction | undefined> {
     try {
-      let rpc = new SorobanRpc.Server(this.network.rpc, this.network.opts);
+      const stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
       const ledgerKey = AuctionData.ledgerKey(APP_CONFIG.poolAddress, {
         auct_type: auctionType,
         user: userId,
       });
-      let ledgerData = await rpc.getLedgerEntries(ledgerKey);
+      const ledgerData = await stellarRpc.getLedgerEntries(ledgerKey);
       if (ledgerData.entries.length === 0) {
         return undefined;
       }
@@ -187,10 +187,10 @@ export class SorobanHelper {
       })
         .addOperation(op)
         .build();
-      let rpc = new SorobanRpc.Server(this.network.rpc, this.network.opts);
+      let stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
 
-      let result = await rpc.simulateTransaction(tx);
-      if (SorobanRpc.Api.isSimulationSuccess(result) && result.result?.retval) {
+      let result = await stellarRpc.simulateTransaction(tx);
+      if (rpc.Api.isSimulationSuccess(result) && result.result?.retval) {
         return scValToNative(result.result.retval);
       }
       return undefined;
@@ -212,10 +212,10 @@ export class SorobanHelper {
       })
         .addOperation(op)
         .build();
-      let rpc = new SorobanRpc.Server(this.network.rpc, this.network.opts);
+      let stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
 
-      let result = await rpc.simulateTransaction(tx);
-      if (SorobanRpc.Api.isSimulationSuccess(result) && result.result?.retval) {
+      let result = await stellarRpc.simulateTransaction(tx);
+      if (rpc.Api.isSimulationSuccess(result) && result.result?.retval) {
         return scValToNative(result.result.retval);
       } else {
         return 0n;
@@ -229,9 +229,9 @@ export class SorobanHelper {
   async submitTransaction<T>(
     operation: string,
     keypair: Keypair
-  ): Promise<SorobanRpc.Api.GetSuccessfulTransactionResponse & { txHash: string }> {
-    const rpc = new SorobanRpc.Server(this.network.rpc, this.network.opts);
-    let account = await rpc.getAccount(keypair.publicKey());
+  ): Promise<rpc.Api.GetSuccessfulTransactionResponse & { txHash: string }> {
+    const stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
+    let account = await stellarRpc.getAccount(keypair.publicKey());
     let tx = new TransactionBuilder(account, {
       networkPassphrase: this.network.passphrase,
       fee: BASE_FEE,
@@ -241,11 +241,11 @@ export class SorobanHelper {
       .build();
 
     logger.info(`Attempting to simulate and submit transaction: ${tx.toXDR()}`);
-    let simResult = await rpc.simulateTransaction(tx);
+    let simResult = await stellarRpc.simulateTransaction(tx);
 
-    if (SorobanRpc.Api.isSimulationRestore(simResult)) {
+    if (rpc.Api.isSimulationRestore(simResult)) {
       logger.info('Simulation ran into expired entries. Attempting to restore.');
-      account = await rpc.getAccount(keypair.publicKey());
+      account = await stellarRpc.getAccount(keypair.publicKey());
       const fee = Number(simResult.restorePreamble.minResourceFee) + 1000;
       const restore_tx = new TransactionBuilder(account, { fee: fee.toString() })
         .setNetworkPassphrase(this.network.passphrase)
@@ -256,7 +256,7 @@ export class SorobanHelper {
       restore_tx.sign(keypair);
       let restore_result = await this.sendTransaction(restore_tx);
       logger.info(`Successfully restored. Tx Hash: ${restore_result.txHash}`);
-      account = await rpc.getAccount(keypair.publicKey());
+      account = await stellarRpc.getAccount(keypair.publicKey());
       tx = new TransactionBuilder(account, {
         networkPassphrase: this.network.passphrase,
         fee: BASE_FEE,
@@ -264,11 +264,11 @@ export class SorobanHelper {
       })
         .addOperation(xdr.Operation.fromXDR(operation, 'base64'))
         .build();
-      simResult = await rpc.simulateTransaction(tx);
+      simResult = await stellarRpc.simulateTransaction(tx);
     }
 
-    if (SorobanRpc.Api.isSimulationSuccess(simResult)) {
-      let assembledTx = SorobanRpc.assembleTransaction(tx, simResult).build();
+    if (rpc.Api.isSimulationSuccess(simResult)) {
+      let assembledTx = rpc.assembleTransaction(tx, simResult).build();
       assembledTx.sign(keypair);
       return await this.sendTransaction(assembledTx);
     } else {
@@ -280,12 +280,12 @@ export class SorobanHelper {
 
   private async sendTransaction(
     transaction: Transaction
-  ): Promise<SorobanRpc.Api.GetSuccessfulTransactionResponse & { txHash: string }> {
-    const rpc = new SorobanRpc.Server(this.network.rpc, this.network.opts);
-    let txResponse = await rpc.sendTransaction(transaction);
+  ): Promise<rpc.Api.GetSuccessfulTransactionResponse & { txHash: string }> {
+    const stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
+    let txResponse = await stellarRpc.sendTransaction(transaction);
     if (txResponse.status === 'TRY_AGAIN_LATER') {
       await new Promise((resolve) => setTimeout(resolve, 4000));
-      txResponse = await rpc.sendTransaction(transaction);
+      txResponse = await stellarRpc.sendTransaction(transaction);
     }
 
     if (txResponse.status !== 'PENDING') {
@@ -295,10 +295,10 @@ export class SorobanHelper {
       );
       throw error;
     }
-    let get_tx_response = await rpc.getTransaction(txResponse.hash);
+    let get_tx_response = await stellarRpc.getTransaction(txResponse.hash);
     while (get_tx_response.status === 'NOT_FOUND') {
       await new Promise((resolve) => setTimeout(resolve, 250));
-      get_tx_response = await rpc.getTransaction(txResponse.hash);
+      get_tx_response = await stellarRpc.getTransaction(txResponse.hash);
     }
 
     if (get_tx_response.status !== 'SUCCESS') {

@@ -1,5 +1,5 @@
 import { PoolContract } from '@blend-capital/blend-sdk';
-import { SorobanRpc } from '@stellar/stellar-sdk';
+import { rpc } from '@stellar/stellar-sdk';
 import { calculateAuctionFill } from './auction.js';
 import { managePositions } from './filler.js';
 import { APP_CONFIG, Filler } from './utils/config.js';
@@ -72,7 +72,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
     try {
       logger.info(`Submitting bid for auction ${stringify(auctionBid.auctionEntry, 2)}`);
       const currLedger = (
-        await new SorobanRpc.Server(
+        await new rpc.Server(
           sorobanHelper.network.rpc,
           sorobanHelper.network.opts
         ).getLatestLedger()

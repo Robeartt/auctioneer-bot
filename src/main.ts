@@ -1,4 +1,4 @@
-import { SorobanRpc } from '@stellar/stellar-sdk';
+import { rpc } from '@stellar/stellar-sdk';
 import { fork } from 'child_process';
 import { runCollector } from './collector.js';
 import { EventType, OracleScanEvent, PriceUpdateEvent, UserRefreshEvent } from './events.js';
@@ -17,7 +17,7 @@ async function main() {
   let collectorInterval: NodeJS.Timeout | null = null;
 
   const db = AuctioneerDatabase.connect();
-  const rpc = new SorobanRpc.Server(APP_CONFIG.rpcURL, { allowHttp: true });
+  const stellarRpc = new rpc.Server(APP_CONFIG.rpcURL, { allowHttp: true });
 
   function shutdown(fromChild: boolean = false) {
     console.log('Shutting down auctioneer...');
@@ -98,7 +98,7 @@ async function main() {
     try {
       let sorobanHelper = new SorobanHelper();
       let poolEventHandler = new PoolEventHandler(db, sorobanHelper, worker);
-      await runCollector(worker, bidder, db, rpc, APP_CONFIG.poolAddress, poolEventHandler);
+      await runCollector(worker, bidder, db, stellarRpc, APP_CONFIG.poolAddress, poolEventHandler);
     } catch (e: any) {
       logger.error(`Error in collector`, e);
     }

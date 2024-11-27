@@ -1,5 +1,5 @@
 import { poolEventFromEventResponse } from '@blend-capital/blend-sdk';
-import { SorobanRpc } from '@stellar/stellar-sdk';
+import { rpc } from '@stellar/stellar-sdk';
 import { ChildProcess } from 'child_process';
 import {
   EventType,
@@ -22,7 +22,7 @@ export async function runCollector(
   worker: ChildProcess,
   bidder: ChildProcess,
   db: AuctioneerDatabase,
-  rpc: SorobanRpc.Server,
+  stellarRpc: rpc.Server,
   poolAddress: string,
   poolEventHandler: PoolEventHandler
 ) {
@@ -31,7 +31,7 @@ export async function runCollector(
   if (!statusEntry) {
     statusEntry = { name: 'collector', latest_ledger: 0 };
   }
-  const latestLedger = (await rpc.getLatestLedger()).sequence;
+  const latestLedger = (await stellarRpc.getLatestLedger()).sequence;
   if (latestLedger > statusEntry.latest_ledger) {
     logger.info(`Processing ledger ${latestLedger}`);
     // new ledger detected
@@ -93,9 +93,9 @@ export async function runCollector(
       statusEntry.latest_ledger === 0 ? latestLedger : statusEntry.latest_ledger + 1;
     // if we are too far behind, start from 17270 ledgers ago (default max ledger history is 17280)
     start_ledger = Math.max(start_ledger, latestLedger - 17270);
-    let events: SorobanRpc.Api.RawGetEventsResponse;
+    let events: rpc.Api.RawGetEventsResponse;
     try {
-      events = await rpc._getEvents({
+      events = await stellarRpc._getEvents({
         startLedger: start_ledger,
         filters: [
           {
@@ -112,7 +112,7 @@ export async function runCollector(
           `Error fetching events at start ledger: ${start_ledger}, retrying with latest ledger ${latestLedger}`,
           e
         );
-        events = await rpc._getEvents({
+        events = await stellarRpc._getEvents({
           startLedger: latestLedger,
           filters: [
             {
@@ -142,7 +142,7 @@ export async function runCollector(
         }
       }
       cursor = events.events[events.events.length - 1].pagingToken;
-      events = await rpc._getEvents({
+      events = await stellarRpc._getEvents({
         cursor: cursor,
         filters: [
           {

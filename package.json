@@ -25,8 +25,8 @@
     "typescript": "^5.5.4"
   },
   "dependencies": {
-    "@blend-capital/blend-sdk": "2.1.2",
-    "@stellar/stellar-sdk": "12.3.0",
+    "@blend-capital/blend-sdk": "2.2.0",
+    "@stellar/stellar-sdk": "13.0.0",
     "better-sqlite3": "^11.1.2",
     "winston": "^3.13.1",
     "winston-daily-rotate-file": "^5.0.0"

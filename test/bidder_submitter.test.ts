@@ -26,8 +26,8 @@ jest.mock('@stellar/stellar-sdk', () => {
   const actual = jest.requireActual('@stellar/stellar-sdk');
   return {
     ...actual,
-    SorobanRpc: {
-      ...actual.SorobanRpc,
+    rpc: {
+      ...actual.rpc,
       Server: jest.fn().mockImplementation(() => ({
         getLatestLedger: jest.fn().mockResolvedValue({ sequence: 999 }),
       })),
