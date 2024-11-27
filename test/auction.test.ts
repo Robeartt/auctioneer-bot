@@ -132,6 +132,12 @@ describe('auctions', () => {
       expect(fill.requests).toEqual(expectedRequests);
       expectRelApproxEqual(fill.lotValue, 260.5722, 0.005);
       expectRelApproxEqual(fill.bidValue, 233.4726912, 0.005);
+
+      expect(mockedGetFilledAvailableBalances).toHaveBeenCalledWith(
+        filler,
+        [BACKSTOP_TOKEN],
+        mockedSorobanHelper
+      );
     });
 
     it('calcs fill for interest auction and delays block to fully fill', async () => {
@@ -339,67 +345,12 @@ describe('auctions', () => {
       expect(fill.requests).toEqual(expectedRequests);
       expectRelApproxEqual(fill.lotValue, 32.8213, 0.005);
       expectRelApproxEqual(fill.bidValue, 29.73769976, 0.005);
-    });
 
-    it('calcs fill for liquidation auction respects force fill setting', async () => {
-      let user = Keypair.random().publicKey();
-      let nextLedger = MOCK_LEDGER + 1;
-      let auction = new Auction(user, AuctionType.Liquidation, {
-        lot: new Map<string, bigint>([
-          [USDC, FixedMath.toFixed(15.93)],
-          [EURC, FixedMath.toFixed(16.211)],
-        ]),
-        bid: new Map<string, bigint>([[XLM, FixedMath.toFixed(400.21)]]),
-        block: MOCK_LEDGER,
-      });
-      positionEstimate.totalEffectiveLiabilities = 0;
-      positionEstimate.totalEffectiveCollateral = 1000;
-
-      mockedSorobanHelper.loadUserPositionEstimate.mockResolvedValue({
-        user: {} as PoolUser,
-        estimate: positionEstimate,
-      });
-      mockedGetFillerProfitPct.mockReturnValue(0.1);
-      mockedGetFilledAvailableBalances.mockResolvedValue(
-        new Map<string, bigint>([[USDC, FixedMath.toFixed(100)]])
-      );
-
-      filler.forceFill = true;
-      let fill_force = await calculateAuctionFill(
+      expect(mockedGetFilledAvailableBalances).toHaveBeenCalledWith(
         filler,
-        auction,
-        nextLedger,
-        mockedSorobanHelper,
-        db
+        [USDC, EURC, XLM],
+        mockedSorobanHelper
       );
-
-      filler.forceFill = false;
-      let fill_no_force = await calculateAuctionFill(
-        filler,
-        auction,
-        nextLedger,
-        mockedSorobanHelper,
-        db
-      );
-
-      let expectedRequests: Request[] = [
-        {
-          request_type: 6,
-          address: user,
-          amount: 100n,
-        },
-      ];
-      expect(fill_force.block).toEqual(MOCK_LEDGER + 220);
-      expect(fill_force.percent).toEqual(100);
-      expect(fill_force.requests).toEqual(expectedRequests);
-      expectRelApproxEqual(fill_force.lotValue, 33.8364, 0.005);
-      expectRelApproxEqual(fill_force.bidValue, 35.67899917, 0.005);
-
-      expect(fill_no_force.block).toEqual(MOCK_LEDGER + 247);
-      expect(fill_no_force.percent).toEqual(100);
-      expect(fill_no_force.requests).toEqual(expectedRequests);
-      expectRelApproxEqual(fill_no_force.lotValue, 33.8364, 0.005);
-      expectRelApproxEqual(fill_no_force.bidValue, 30.32714929, 0.005);
     });
 
     it('calcs fill for liquidation auction and repays incoming liabilties and withdraws 0 CF collateral', async () => {
@@ -740,6 +691,12 @@ describe('auctions', () => {
       expect(fill.requests).toEqual(expectedRequests);
       expectRelApproxEqual(fill.lotValue, 1648.5, 0.005);
       expectRelApproxEqual(fill.bidValue, 1495.503014, 0.005);
+
+      expect(mockedGetFilledAvailableBalances).toHaveBeenCalledWith(
+        filler,
+        [XLM, USDC],
+        mockedSorobanHelper
+      );
     });
   });
 

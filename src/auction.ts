@@ -96,8 +96,7 @@ export async function calculateBlockFillAndPercent(
       relevant_assets.push(APP_CONFIG.backstopTokenAddress);
       break;
     case AuctionType.BadDebt:
-      relevant_assets.push(...Array.from(auction.data.lot.keys()));
-      relevant_assets.push(APP_CONFIG.backstopTokenAddress);
+      relevant_assets.push(...Array.from(auction.data.bid.keys()));
       relevant_assets.push(filler.primaryAsset);
       break;
   }
@@ -121,14 +120,10 @@ export async function calculateBlockFillAndPercent(
   }
   fillBlockDelay = Math.min(Math.max(Math.ceil(fillBlockDelay), 0), 400);
   // apply force fill auction boundries to profit calculations
-  if (
-    (auction.type === AuctionType.Liquidation || auction.type === AuctionType.BadDebt) &&
-    filler.forceFill
-  ) {
-    fillBlockDelay = Math.min(fillBlockDelay, 220);
-  } else if (auction.type === AuctionType.Interest && filler.forceFill) {
+  if (filler.forceFill) {
     fillBlockDelay = Math.min(fillBlockDelay, 350);
   }
+
   // if calculated fillBlock has already passed, adjust fillBlock to the next ledger
   if (auction.data.block + fillBlockDelay < nextLedger) {
     fillBlockDelay = Math.min(nextLedger - auction.data.block, 400);
