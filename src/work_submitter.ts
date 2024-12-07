@@ -1,7 +1,7 @@
 import { ContractError, ContractErrorType, PoolContract } from '@blend-capital/blend-sdk';
 import { APP_CONFIG } from './utils/config.js';
 import { AuctionType } from './utils/db.js';
-import { stringify } from './utils/json.js';
+import { serializeError, stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
 import { sendSlackNotification } from './utils/slack_notifier.js';
 import { SorobanHelper } from './utils/soroban_helper.js';
@@ -94,10 +94,11 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
       const logMessage =
         `Error creating user liquidation\n` +
         `User: ${userLiquidation.user}\n` +
-        `Liquidation Percent: ${userLiquidation.liquidationPercent}\nError: ${stringify(e)}\n` +
-        `Error: ${e}\n`;
-      logger.error(logMessage);
-      await sendSlackNotification(`<!channel>` + logMessage);
+        `Liquidation Percent: ${userLiquidation.liquidationPercent}`;
+      logger.error(logMessage, e);
+      await sendSlackNotification(
+        `<!channel> ` + logMessage + `\nError: ${stringify(serializeError(e))}`
+      );
       return false;
     }
   }
@@ -115,10 +116,11 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
       logger.info(logMessage);
       return true;
     } catch (e: any) {
-      const logMessage =
-        `Error transfering bad debt\n` + `User: ${badDebtTransfer.user}\n` + `Error: ${e}\n`;
-      logger.error(logMessage);
-      await sendSlackNotification(`<!channel>` + logMessage);
+      const logMessage = `Error transfering bad debt\n` + `User: ${badDebtTransfer.user}`;
+      logger.error(logMessage, e);
+      await sendSlackNotification(
+        `<!channel> ` + logMessage + `\nError: ${stringify(serializeError(e))}`
+      );
       return false;
     }
   }
@@ -142,7 +144,9 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
     } catch (e: any) {
       const logMessage = `Error creating bad debt auction\n` + `Error: ${e}\n`;
       logger.error(logMessage);
-      await sendSlackNotification(`<!channel>` + logMessage);
+      await sendSlackNotification(
+        `<!channel> ` + logMessage + `\nError: ${stringify(serializeError(e))}`
+      );
       return false;
     }
   }

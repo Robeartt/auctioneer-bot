@@ -1,4 +1,4 @@
-import { calculateBlockFillAndPercent } from './auction.js';
+import { calculateAuctionFill } from './auction.js';
 import { AuctionBid, BidderSubmissionType, BidderSubmitter } from './bidder_submitter.js';
 import { AppEvent, EventType } from './events.js';
 import { APP_CONFIG } from './utils/config.js';
@@ -33,64 +33,66 @@ export class BidderHandler {
           const nextLedger = appEvent.ledger + 1;
           const auctions = this.db.getAllAuctionEntries();
 
-          for (let auction of auctions) {
+          for (let auctionEntry of auctions) {
             try {
               const filler = APP_CONFIG.fillers.find(
-                (f) => f.keypair.publicKey() === auction.filler
+                (f) => f.keypair.publicKey() === auctionEntry.filler
               );
               if (filler === undefined) {
-                logger.error(`Filler not found for auction: ${stringify(auction)}`);
+                logger.error(`Filler not found for auction: ${stringify(auctionEntry)}`);
                 continue;
               }
 
-              if (this.submissionQueue.containsAuction(auction)) {
+              if (this.submissionQueue.containsAuction(auctionEntry)) {
                 // auction already being bid on
                 continue;
               }
 
-              const ledgersToFill = auction.fill_block - nextLedger;
-              if (auction.fill_block === 0 || ledgersToFill <= 5 || ledgersToFill % 10 === 0) {
+              const ledgersToFill = auctionEntry.fill_block - nextLedger;
+              if (auctionEntry.fill_block === 0 || ledgersToFill <= 5 || ledgersToFill % 10 === 0) {
                 // recalculate the auction
-                const auctionData = await this.sorobanHelper.loadAuction(
-                  auction.user_id,
-                  auction.auction_type
+                const auction = await this.sorobanHelper.loadAuction(
+                  auctionEntry.user_id,
+                  auctionEntry.auction_type
                 );
-                if (auctionData === undefined) {
-                  this.db.deleteAuctionEntry(auction.user_id, auction.auction_type);
+                if (auction === undefined) {
+                  logger.info(
+                    `Auction not found. Assuming auction was deleted or filled. Deleting auction: ${auctionEntry.user_id}, ${auctionEntry.auction_type}`
+                  );
+                  this.db.deleteAuctionEntry(auctionEntry.user_id, auctionEntry.auction_type);
                   continue;
                 }
-                const fillCalculation = await calculateBlockFillAndPercent(
+                const fill = await calculateAuctionFill(
                   filler,
-                  auction.auction_type,
-                  auctionData,
+                  auction,
+                  nextLedger,
                   this.sorobanHelper,
                   this.db
                 );
                 const logMessage =
                   `Auction Calculation\n` +
-                  `Type: ${AuctionType[auction.auction_type]}\n` +
-                  `User: ${auction.user_id}\n` +
-                  `Calculation: ${stringify(fillCalculation, 2)}\n` +
-                  `Ledgers To Fill In: ${fillCalculation.fillBlock - nextLedger}\n`;
-                if (auction.fill_block === 0) {
+                  `Type: ${AuctionType[auction.type]}\n` +
+                  `User: ${auction.user}\n` +
+                  `Fill: ${stringify(fill, 2)}\n` +
+                  `Ledgers To Fill In: ${fill.block - nextLedger}\n`;
+                if (auctionEntry.fill_block === 0) {
                   await sendSlackNotification(logMessage);
                 }
                 logger.info(logMessage);
-                auction.fill_block = fillCalculation.fillBlock;
-                auction.updated = appEvent.ledger;
-                this.db.setAuctionEntry(auction);
+                auctionEntry.fill_block = fill.block;
+                auctionEntry.updated = appEvent.ledger;
+                this.db.setAuctionEntry(auctionEntry);
               }
-
-              if (auction.fill_block <= nextLedger) {
+              if (auctionEntry.fill_block <= nextLedger) {
                 let submission: AuctionBid = {
                   type: BidderSubmissionType.BID,
                   filler: filler,
-                  auctionEntry: auction,
+                  auctionEntry: auctionEntry,
                 };
                 this.submissionQueue.addSubmission(submission, 10);
               }
             } catch (e: any) {
-              logger.error(`Error processing block for auction: ${stringify(auction)}`, e);
+              logger.error(`Error processing block for auction: ${stringify(auctionEntry)}`, e);
             }
           }
         } catch (err) {

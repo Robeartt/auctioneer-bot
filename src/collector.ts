@@ -1,5 +1,5 @@
 import { poolEventFromEventResponse } from '@blend-capital/blend-sdk';
-import { SorobanRpc } from '@stellar/stellar-sdk';
+import { rpc } from '@stellar/stellar-sdk';
 import { ChildProcess } from 'child_process';
 import {
   EventType,
@@ -16,11 +16,13 @@ import { stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
 import { sendEvent } from './utils/messages.js';
 
+let startup_ledger = 0;
+
 export async function runCollector(
   worker: ChildProcess,
   bidder: ChildProcess,
   db: AuctioneerDatabase,
-  rpc: SorobanRpc.Server,
+  stellarRpc: rpc.Server,
   poolAddress: string,
   poolEventHandler: PoolEventHandler
 ) {
@@ -29,7 +31,7 @@ export async function runCollector(
   if (!statusEntry) {
     statusEntry = { name: 'collector', latest_ledger: 0 };
   }
-  const latestLedger = (await rpc.getLatestLedger()).sequence;
+  const latestLedger = (await stellarRpc.getLatestLedger()).sequence;
   if (latestLedger > statusEntry.latest_ledger) {
     logger.info(`Processing ledger ${latestLedger}`);
     // new ledger detected
@@ -40,8 +42,15 @@ export async function runCollector(
     };
     sendEvent(bidder, ledger_event);
 
+    // determine ledgers since bot was started to send long running work events
+    // this staggers the events from different bots running on the same pool
+    if (startup_ledger === 0) {
+      startup_ledger = latestLedger;
+    }
+    const ledgersProcessed = latestLedger - startup_ledger;
+
     // send long running work events to worker
-    if (latestLedger % 10 === 0) {
+    if (ledgersProcessed % 10 === 0) {
       // approx every minute
       const event: PriceUpdateEvent = {
         type: EventType.PRICE_UPDATE,
@@ -49,7 +58,7 @@ export async function runCollector(
       };
       sendEvent(worker, event);
     }
-    if (latestLedger % 60 === 0) {
+    if (ledgersProcessed % 60 === 0) {
       // approx every 5m
       // send an oracle scan event
       const event: OracleScanEvent = {
@@ -58,7 +67,7 @@ export async function runCollector(
       };
       sendEvent(worker, event);
     }
-    if (latestLedger % 1203 === 0) {
+    if (ledgersProcessed % 1203 === 0) {
       // approx every 2hr
       // send a user update event to update any users that have not been updated in ~2 weeks
       const event: UserRefreshEvent = {
@@ -68,7 +77,7 @@ export async function runCollector(
       };
       sendEvent(worker, event);
     }
-    if (latestLedger % 1207 === 0) {
+    if (ledgersProcessed % 1207 === 0) {
       // approx every 2hr
       // send a liq scan event
       const event: LiqScanEvent = {
@@ -84,9 +93,9 @@ export async function runCollector(
       statusEntry.latest_ledger === 0 ? latestLedger : statusEntry.latest_ledger + 1;
     // if we are too far behind, start from 17270 ledgers ago (default max ledger history is 17280)
     start_ledger = Math.max(start_ledger, latestLedger - 17270);
-    let events: SorobanRpc.Api.RawGetEventsResponse;
+    let events: rpc.Api.RawGetEventsResponse;
     try {
-      events = await rpc._getEvents({
+      events = await stellarRpc._getEvents({
         startLedger: start_ledger,
         filters: [
           {
@@ -100,9 +109,10 @@ export async function runCollector(
       // Handles the case where the rpc server is restarted and no longer has events from the start ledger we requested
       if (e.code === -32600) {
         logger.error(
-          `Error fetching events at start ledger: ${start_ledger}, retrying with latest ledger ${latestLedger} Error: ${e}`
+          `Error fetching events at start ledger: ${start_ledger}, retrying with latest ledger ${latestLedger}`,
+          e
         );
-        events = await rpc._getEvents({
+        events = await stellarRpc._getEvents({
           startLedger: latestLedger,
           filters: [
             {
@@ -132,7 +142,7 @@ export async function runCollector(
         }
       }
       cursor = events.events[events.events.length - 1].pagingToken;
-      events = await rpc._getEvents({
+      events = await stellarRpc._getEvents({
         cursor: cursor,
         filters: [
           {

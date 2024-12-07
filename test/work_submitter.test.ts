@@ -1,4 +1,4 @@
-import { ContractError, ContractErrorType } from '@blend-capital/blend-sdk';
+import { Auction, ContractError, ContractErrorType } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import { AppConfig } from '../src/utils/config';
 import { AuctionType } from '../src/utils/db';
@@ -63,11 +63,13 @@ describe('WorkSubmitter', () => {
   });
 
   it('should not submit if auction already exists', async () => {
-    mockedSorobanHelper.loadAuction.mockResolvedValue({
-      bid: new Map<string, bigint>([['USD', BigInt(123)]]),
-      lot: new Map<string, bigint>([['USD', BigInt(456)]]),
-      block: 500,
-    });
+    mockedSorobanHelper.loadAuction.mockResolvedValue(
+      new Auction('user1', AuctionType.Liquidation, {
+        bid: new Map<string, bigint>([['USD', BigInt(123)]]),
+        lot: new Map<string, bigint>([['USD', BigInt(456)]]),
+        block: 500,
+      })
+    );
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
@@ -228,11 +230,13 @@ describe('WorkSubmitter', () => {
   });
 
   it('should not submit if auction already exists', async () => {
-    mockedSorobanHelper.loadAuction.mockResolvedValue({
-      bid: new Map<string, bigint>([['USD', BigInt(123)]]),
-      lot: new Map<string, bigint>([['USD', BigInt(456)]]),
-      block: 500,
-    });
+    mockedSorobanHelper.loadAuction.mockResolvedValue(
+      new Auction('user1', AuctionType.Liquidation, {
+        bid: new Map<string, bigint>([['USD', BigInt(123)]]),
+        lot: new Map<string, bigint>([['USD', BigInt(456)]]),
+        block: 500,
+      })
+    );
 
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtAuction,

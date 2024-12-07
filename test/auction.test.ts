@@ -1,41 +1,35 @@
-import { BackstopToken, Request, RequestType } from '@blend-capital/blend-sdk';
-import { Keypair } from '@stellar/stellar-sdk';
 import {
-  buildFillRequests,
-  calculateAuctionValue,
-  calculateBlockFillAndPercent,
-  scaleAuction,
-} from '../src/auction.js';
-import { AuctionBid, BidderSubmissionType } from '../src/bidder_submitter.js';
+  Auction,
+  AuctionType,
+  BackstopToken,
+  FixedMath,
+  PoolUser,
+  PositionsEstimate,
+  Request,
+} from '@blend-capital/blend-sdk';
+import { Keypair } from '@stellar/stellar-sdk';
+import { calculateAuctionFill, valueBackstopTokenInUSDC } from '../src/auction.js';
+import { getFillerAvailableBalances, getFillerProfitPct } from '../src/filler.js';
 import { Filler } from '../src/utils/config.js';
-import { AuctioneerDatabase, AuctionType } from '../src/utils/db.js';
+import { AuctioneerDatabase } from '../src/utils/db.js';
 import { SorobanHelper } from '../src/utils/soroban_helper.js';
 import {
+  AQUA,
+  BACKSTOP,
+  BACKSTOP_TOKEN,
+  EURC,
   inMemoryAuctioneerDb,
+  MOCK_LEDGER,
+  MOCK_TIMESTAMP,
+  mockPool,
   mockPoolOracle,
-  mockPoolUser,
-  mockPoolUserEstimate,
-  mockedPool,
+  USDC,
+  XLM,
 } from './helpers/mocks.js';
+import { expectRelApproxEqual } from './helpers/utils.js';
 
-jest.mock('../src/utils/soroban_helper.js', () => {
-  return {
-    SorobanHelper: jest.fn().mockImplementation(() => {
-      return {
-        loadPool: jest.fn().mockReturnValue(mockedPool),
-        loadUser: jest.fn().mockReturnValue(mockPoolUser),
-        loadUserPositionEstimate: jest
-          .fn()
-          .mockReturnValue({ estimate: mockPoolUserEstimate, user: mockPoolUser }),
-        simLPTokenToUSDC: jest.fn().mockImplementation((number: bigint) => {
-          return (number * 33333n) / 100000n;
-        }),
-        loadPoolOracle: jest.fn().mockReturnValue(mockPoolOracle),
-      };
-    }),
-  };
-});
-
+jest.mock('../src/utils/soroban_helper.js');
+jest.mock('../src/filler.js');
 jest.mock('../src/utils/config.js', () => {
   return {
     APP_CONFIG: {
@@ -52,794 +46,684 @@ jest.mock('../src/utils/config.js', () => {
   };
 });
 
-describe('calculateBlockFillAndPercent', () => {
+describe('auctions', () => {
   let filler: Filler;
-  let sorobanHelper: SorobanHelper;
+  const mockedSorobanHelper = new SorobanHelper() as jest.Mocked<SorobanHelper>;
   let db: AuctioneerDatabase;
+  let positionEstimate: PositionsEstimate;
+
+  const mockedGetFilledAvailableBalances = getFillerAvailableBalances as jest.MockedFunction<
+    typeof getFillerAvailableBalances
+  >;
+  const mockedGetFillerProfitPct = getFillerProfitPct as jest.MockedFunction<
+    typeof getFillerProfitPct
+  >;
+
   beforeEach(() => {
-    sorobanHelper = new SorobanHelper();
+    jest.resetAllMocks();
+    db = inMemoryAuctioneerDb();
     filler = {
       name: 'Tester',
       keypair: Keypair.random(),
-      minProfitPct: 0.2,
-      minHealthFactor: 1.3,
+      defaultProfitPct: 0.1,
+      minHealthFactor: 1.2,
+      primaryAsset: USDC,
+      minPrimaryCollateral: 0n,
       forceFill: true,
       supportedBid: [],
       supportedLot: [],
     };
-    db = inMemoryAuctioneerDb();
-  });
-
-  it('test user liquidation expect fill under 200', async () => {
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75', 10000_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 80000_0000000n],
-      ]),
-      block: 123,
+    positionEstimate = {
+      totalBorrowed: 0,
+      totalSupplied: 0,
+      // only effective numbers used
+      totalEffectiveLiabilities: 0,
+      totalEffectiveCollateral: 4750,
+      borrowCap: 0,
+      borrowLimit: 0,
+      netApr: 0,
+      supplyApr: 0,
+      borrowApr: 0,
     };
-
-    let fillCalc = await calculateBlockFillAndPercent(
-      filler,
-      AuctionType.Liquidation,
-      auctionData,
-      sorobanHelper,
-      db
-    );
-    expect(fillCalc.fillBlock).toEqual(312);
-    expect(fillCalc.fillPercent).toEqual(100);
-  });
-
-  it('test user liquidation expect fill over 200', async () => {
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75', 10000_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 90000_0000000n],
-      ]),
-      block: 123,
-    };
-    filler.forceFill = false;
-    let fillCalc = await calculateBlockFillAndPercent(
-      filler,
-      AuctionType.Liquidation,
-      auctionData,
-      sorobanHelper,
-      db
-    );
-    expect(fillCalc.fillBlock).toEqual(343);
-    expect(fillCalc.fillPercent).toEqual(100);
-  });
-
-  it('test force fill user liquidations sets fill to 198', async () => {
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75', 10000_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 90000_0000000n],
-      ]),
-      block: 123,
-    };
-    let fillCalc = await calculateBlockFillAndPercent(
-      filler,
-      AuctionType.Liquidation,
-      auctionData,
-      sorobanHelper,
-      db
-    );
-    expect(fillCalc.fillBlock).toEqual(321);
-    expect(fillCalc.fillPercent).toEqual(100);
-  });
-
-  it('test user liquidation does not exceed min health factor', async () => {
-    mockPoolUserEstimate.totalEffectiveLiabilities = 18660;
-    sorobanHelper.loadUserPositionEstimate = jest
-      .fn()
-      .mockReturnValue({ estimate: mockPoolUserEstimate, user: mockPoolUser });
-
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75', 10000_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 88000_0000000n],
-      ]),
-      block: 123,
-    };
-    filler.forceFill = false;
-    let fillCalc = await calculateBlockFillAndPercent(
-      filler,
-      AuctionType.Liquidation,
-      auctionData,
-      sorobanHelper,
-      db
-    );
-    expect(fillCalc.fillBlock).toEqual(339);
-    expect(fillCalc.fillPercent).toEqual(50);
-  });
-
-  it('test interest auction', async () => {
-    sorobanHelper.loadUserPositionEstimate = jest
-      .fn()
-      .mockReturnValue({ estimate: mockPoolUserEstimate, user: mockPoolUser });
-    sorobanHelper.simBalance = jest.fn().mockReturnValue(5000_0000000n);
-    sorobanHelper.simLPTokenToUSDC = jest.fn().mockImplementation((number) => {
-      return (number * 33333n) / 100000n;
+    mockedSorobanHelper.loadPool.mockResolvedValue(mockPool);
+    mockedSorobanHelper.loadPoolOracle.mockResolvedValue(mockPoolOracle);
+    mockedSorobanHelper.loadUserPositionEstimate.mockResolvedValue({
+      estimate: positionEstimate,
+      user: {} as PoolUser,
     });
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75', 1000_0000000n],
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 2000_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM', 5500_0000000n],
-      ]),
-      block: 123,
-    };
-
-    let fillCalc = await calculateBlockFillAndPercent(
-      filler,
-      AuctionType.Interest,
-      auctionData,
-      sorobanHelper,
-      db
-    );
-    expect(fillCalc.fillBlock).toEqual(419);
-    expect(fillCalc.fillPercent).toEqual(100);
-  });
-
-  it('test force fill for interest auction', async () => {
-    sorobanHelper.loadUserPositionEstimate = jest
-      .fn()
-      .mockReturnValue({ estimate: mockPoolUserEstimate, user: mockPoolUser });
-    sorobanHelper.simBalance = jest.fn().mockReturnValue(5000_0000000n);
-    sorobanHelper.simLPTokenToUSDC = jest.fn().mockImplementation((number) => {
-      return (number * 33333n) / 100000n;
+    mockedSorobanHelper.simLPTokenToUSDC.mockImplementation((number: bigint) => {
+      // 0.5 USDC per LP token
+      return Promise.resolve((number * 5000000n) / 10000000n);
     });
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75', 1_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM', 5500_0000000n],
-      ]),
-      block: 123,
-    };
-
-    let fillCalc = await calculateBlockFillAndPercent(
-      filler,
-      AuctionType.Interest,
-      auctionData,
-      sorobanHelper,
-      db
-    );
-    expect(fillCalc.fillBlock).toEqual(473);
-    expect(fillCalc.fillPercent).toEqual(100);
-  });
-  it('test interest auction increases block fill delay to fully fill', async () => {
-    sorobanHelper.simBalance = jest.fn().mockReturnValue(2000_0000000n);
-
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75', 1000_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM', 4242_0000000n],
-      ]),
-      block: 123,
-    };
-    filler.forceFill = false;
-    let fillCalc = await calculateBlockFillAndPercent(
-      filler,
-      AuctionType.Interest,
-      auctionData,
-      sorobanHelper,
-      db
-    );
-    expect(fillCalc.fillBlock).toEqual(429);
-    expect(fillCalc.fillPercent).toEqual(100);
   });
 
-  it('test bad debt auction', async () => {
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM', 456_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 456_0000000n],
-        ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75', 123_0000000n],
-      ]),
-      block: 123,
-    };
+  describe('calcAuctionFill', () => {
+    // *** Interest Auctions ***
 
-    let fillCalc = await calculateBlockFillAndPercent(
-      filler,
-      AuctionType.BadDebt,
-      auctionData,
-      sorobanHelper,
-      db
-    );
-    expect(fillCalc.fillBlock).toEqual(380);
-    expect(fillCalc.fillPercent).toEqual(100);
-  });
-});
+    it('calcs fill for interest auction', async () => {
+      let nextLedger = MOCK_LEDGER + 1;
+      let auction = new Auction(BACKSTOP, AuctionType.Interest, {
+        lot: new Map<string, bigint>([
+          [XLM, FixedMath.toFixed(120)],
+          [USDC, FixedMath.toFixed(210)],
+          [EURC, FixedMath.toFixed(34)],
+          [AQUA, FixedMath.toFixed(2500)],
+        ]),
+        bid: new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(728.01456)]]),
+        block: MOCK_LEDGER,
+      });
 
-describe('calculateAuctionValue', () => {
-  let sorobanHelper = new SorobanHelper();
-  let db = inMemoryAuctioneerDb();
-  it('test valuing user auction', async () => {
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75', 1234_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 5678_0000000n],
-      ]),
-      block: 123,
-    };
+      mockedGetFillerProfitPct.mockReturnValue(0.1);
+      mockedGetFilledAvailableBalances.mockResolvedValue(
+        new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(1000)]])
+      );
 
-    let result = await calculateAuctionValue(
-      AuctionType.Liquidation,
-      auctionData,
-      sorobanHelper,
-      db
-    );
-    expect(result.bidValue).toBeCloseTo(562.42);
-    expect(result.lotValue).toBeCloseTo(1242.24);
-    expect(result.effectiveCollateral).toBeCloseTo(1180.13);
-    expect(result.effectiveLiabilities).toBeCloseTo(749.89);
-  });
+      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
 
-  it('test valuing interest auction', async () => {
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75', 1234_0000000n],
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 5678_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM', 12345678_0000000n],
-      ]),
-      block: 123,
-    };
+      let expectedRequests: Request[] = [
+        {
+          request_type: 8,
+          address: BACKSTOP,
+          amount: 100n,
+        },
+      ];
+      expect(fill.block).toEqual(MOCK_LEDGER + 272);
+      expect(fill.percent).toEqual(100);
+      expect(fill.requests).toEqual(expectedRequests);
+      expectRelApproxEqual(fill.lotValue, 260.5722, 0.005);
+      expectRelApproxEqual(fill.bidValue, 233.4726912, 0.005);
 
-    let result = await calculateAuctionValue(AuctionType.Interest, auctionData, sorobanHelper, db);
-    expect(result.bidValue).toBeCloseTo(4115184.85);
-    expect(result.lotValue).toBeCloseTo(1795.72);
-    expect(result.effectiveCollateral).toBeCloseTo(0);
-    expect(result.effectiveLiabilities).toBeCloseTo(0);
-  });
-
-  it('test valuing bad debt auction', async () => {
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM', 12345678_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75', 1234_0000000n],
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 5678_0000000n],
-      ]),
-      block: 123,
-    };
-
-    let result = await calculateAuctionValue(AuctionType.BadDebt, auctionData, sorobanHelper, db);
-    expect(result.bidValue).toBeCloseTo(1808.6);
-    expect(result.lotValue).toBeCloseTo(4115184.85);
-    expect(result.effectiveCollateral).toBeCloseTo(0);
-    expect(result.effectiveLiabilities).toBeCloseTo(2061.66);
-  });
-  it('test valuing lp token when simLPTokenToUSDC is not defined', async () => {
-    sorobanHelper.simLPTokenToUSDC = jest.fn().mockResolvedValue(undefined);
-    sorobanHelper.loadBackstopToken = jest
-      .fn()
-      .mockResolvedValue(new BackstopToken('id', 100n, 100n, 100n, 100, 100, 1));
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM', 12345678_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75', 1234_0000000n],
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 5678_0000000n],
-      ]),
-      block: 123,
-    };
-
-    let result = await calculateAuctionValue(AuctionType.BadDebt, auctionData, sorobanHelper, db);
-    expect(result.bidValue).toBeCloseTo(1808.6);
-    expect(result.lotValue).toBeCloseTo(12345678);
-    expect(result.effectiveCollateral).toBeCloseTo(0);
-    expect(result.effectiveLiabilities).toBeCloseTo(2061.66);
-
-    auctionData = {
-      bid: new Map<string, bigint>([
-        ['CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM', 12345678_0000000n],
-      ]),
-      lot: new Map<string, bigint>([
-        ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75', 1234_0000000n],
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 5678_0000000n],
-      ]),
-      block: 123,
-    };
-
-    result = await calculateAuctionValue(AuctionType.Interest, auctionData, sorobanHelper, db);
-    expect(result.bidValue).toBeCloseTo(12345678);
-    expect(result.lotValue).toBeCloseTo(1795.72);
-    expect(result.effectiveCollateral).toBeCloseTo(0);
-    expect(result.effectiveLiabilities).toBeCloseTo(0);
-  });
-});
-
-describe('buildFillRequests', () => {
-  let sorobanHelper = new SorobanHelper();
-  it('test user liquidation auction requests', async () => {
-    const filler = Keypair.random();
-    const user = Keypair.random();
-    const auctionBid: AuctionBid = {
-      type: BidderSubmissionType.BID,
-      filler: {
-        name: '',
-        keypair: filler,
-        minProfitPct: 0.2,
-        minHealthFactor: 1.2,
-        forceFill: false,
-        supportedBid: [],
-        supportedLot: ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75'],
-      },
-      auctionEntry: {
-        user_id: user.publicKey(),
-        auction_type: AuctionType.Interest,
-        filler: filler.publicKey(),
-        start_block: 0,
-        fill_block: 0,
-        updated: 0,
-      },
-    };
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV', 10000_0000000n],
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 80000_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK', 456_0000000n],
-      ]),
-      block: 123,
-    };
-    let requests = await buildFillRequests(auctionBid, auctionData, 100, sorobanHelper);
-    let expectRequests: Request[] = [
-      {
-        request_type: RequestType.FillInterestAuction,
-        address: user.publicKey(),
-        amount: 100n,
-      },
-    ];
-    expect(requests.length).toEqual(1);
-    expect(requests).toEqual(expectRequests);
-  });
-  it('test interest auction requests', async () => {
-    const filler = Keypair.random();
-    const user = Keypair.random();
-    const auctionBid: AuctionBid = {
-      type: BidderSubmissionType.BID,
-      filler: {
-        name: '',
-        keypair: filler,
-        minProfitPct: 0.2,
-        minHealthFactor: 1.2,
-        forceFill: false,
-        supportedBid: [],
-        supportedLot: ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75'],
-      },
-      auctionEntry: {
-        user_id: user.publicKey(),
-        auction_type: AuctionType.Interest,
-        filler: filler.publicKey(),
-        start_block: 0,
-        fill_block: 0,
-        updated: 0,
-      },
-    };
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV', 10000_0000000n],
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 80000_0000000n],
-        ['CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK', 456_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM', 50000_0000000n],
-      ]),
-      block: 123,
-    };
-    let requests = await buildFillRequests(auctionBid, auctionData, 100, sorobanHelper);
-    let expectRequests: Request[] = [
-      {
-        request_type: RequestType.FillInterestAuction,
-        address: user.publicKey(),
-        amount: 100n,
-      },
-    ];
-    expect(requests.length).toEqual(1);
-    expect(requests).toEqual(expectRequests);
-  });
-
-  it('test bad debt auction requests', async () => {
-    const filler = Keypair.random();
-    const user = Keypair.random();
-    const auctionBid: AuctionBid = {
-      type: BidderSubmissionType.BID,
-      filler: {
-        name: '',
-        keypair: filler,
-        minProfitPct: 0.2,
-        minHealthFactor: 1.2,
-        forceFill: false,
-        supportedBid: [],
-        supportedLot: ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75'],
-      },
-      auctionEntry: {
-        user_id: user.publicKey(),
-        auction_type: AuctionType.BadDebt,
-        filler: filler.publicKey(),
-        start_block: 0,
-        fill_block: 0,
-        updated: 0,
-      },
-    };
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM', 30000_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV', 10000_0000000n],
-        ['CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK', 456_0000000n],
-      ]),
-      block: 123,
-    };
-    sorobanHelper.simBalance = jest.fn().mockImplementation((tokenId: string, userId: string) => {
-      if (tokenId === 'CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK')
-        return 500_0000000n;
-      else if (tokenId === 'CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV')
-        return 10000_0000000n;
-      else return 0;
+      expect(mockedGetFilledAvailableBalances).toHaveBeenCalledWith(
+        filler,
+        [BACKSTOP_TOKEN],
+        mockedSorobanHelper
+      );
     });
-    let requests = await buildFillRequests(auctionBid, auctionData, 100, sorobanHelper);
-    let expectRequests: Request[] = [
-      {
-        request_type: RequestType.FillBadDebtAuction,
-        address: user.publicKey(),
-        amount: 100n,
-      },
-      {
-        request_type: RequestType.Repay,
-        address: 'CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV',
-        amount: 10000_0000000n,
-      },
-      {
-        request_type: RequestType.Repay,
-        address: 'CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK',
-        amount: 500_0000000n,
-      },
-    ];
-    expect(requests.length).toEqual(3);
-    expect(requests).toEqual(expectRequests);
-  });
 
-  it('test repay xlm does not use full balance', async () => {
-    const filler = Keypair.random();
-    const user = Keypair.random();
-    const auctionBid: AuctionBid = {
-      type: BidderSubmissionType.BID,
-      filler: {
-        name: '',
-        keypair: filler,
-        minProfitPct: 0.2,
-        minHealthFactor: 1.2,
-        forceFill: false,
-        supportedBid: [],
-        supportedLot: ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75'],
-      },
-      auctionEntry: {
-        user_id: user.publicKey(),
-        auction_type: AuctionType.Liquidation,
-        filler: filler.publicKey(),
-        start_block: 0,
-        fill_block: 0,
-        updated: 0,
-      },
-    };
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV', 10000_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 80000_0000000n],
-        ['CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK', 456_0000000n],
-      ]),
-      block: 123,
-    };
-    sorobanHelper.simBalance = jest.fn().mockImplementation((tokenId: string, userId: string) => {
-      if (tokenId === 'CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA')
-        return 95000_0000000n;
-      else if (tokenId === 'CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK')
-        return 500_0000000n;
-      else return 0;
+    it('calcs fill for interest auction and delays block to fully fill', async () => {
+      let nextLedger = MOCK_LEDGER + 1;
+      let auction = new Auction(BACKSTOP, AuctionType.Interest, {
+        lot: new Map<string, bigint>([
+          [XLM, FixedMath.toFixed(120)],
+          [USDC, FixedMath.toFixed(210)],
+          [EURC, FixedMath.toFixed(34)],
+          [AQUA, FixedMath.toFixed(2500)],
+        ]),
+        bid: new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(728.01456)]]),
+        block: MOCK_LEDGER,
+      });
+
+      mockedGetFillerProfitPct.mockReturnValue(0.1);
+      mockedGetFilledAvailableBalances.mockResolvedValue(
+        new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(400)]])
+      );
+
+      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+
+      let expectedRequests: Request[] = [
+        {
+          request_type: 8,
+          address: BACKSTOP,
+          amount: 100n,
+        },
+      ];
+      expect(fill.block).toEqual(MOCK_LEDGER + 272 + 19);
+      expect(fill.percent).toEqual(100);
+      expect(fill.requests).toEqual(expectedRequests);
+      expectRelApproxEqual(fill.lotValue, 260.5722, 0.005);
+      expectRelApproxEqual(fill.bidValue, 198.8165886, 0.005);
     });
-    let requests = await buildFillRequests(auctionBid, auctionData, 100, sorobanHelper);
-    let expectRequests: Request[] = [
-      {
-        request_type: RequestType.FillUserLiquidationAuction,
-        address: user.publicKey(),
-        amount: 100n,
-      },
-      {
-        request_type: RequestType.Repay,
-        address: 'CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA',
-        amount: 95000_0000000n - BigInt(100e7),
-      },
-      {
-        request_type: RequestType.Repay,
-        address: 'CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK',
-        amount: 500_0000000n,
-      },
-      {
-        request_type: RequestType.WithdrawCollateral,
-        address: 'CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV',
-        amount: 9223372036854775807n,
-      },
-    ];
-    expect(requests.length).toEqual(4);
-    expect(requests).toEqual(expectRequests);
-  });
 
-  it('test requests does not withdraw exisiting supplied position', async () => {
-    const filler = Keypair.random();
-    const user = Keypair.random();
-    const auctionBid: AuctionBid = {
-      type: BidderSubmissionType.BID,
-      filler: {
-        name: '',
-        keypair: filler,
-        minProfitPct: 0.2,
-        minHealthFactor: 1.2,
-        forceFill: false,
-        supportedBid: [],
-        supportedLot: ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75'],
-      },
-      auctionEntry: {
-        user_id: user.publicKey(),
-        auction_type: AuctionType.Liquidation,
-        filler: filler.publicKey(),
-        start_block: 0,
-        fill_block: 0,
-        updated: 0,
-      },
-    };
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75', 10000_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV', 800_0000000n],
-      ]),
-      block: 123,
-    };
-    sorobanHelper.simBalance = jest.fn().mockImplementation((tokenId: string, userId: string) => {
-      if (tokenId === 'CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA')
-        return 95000_0000000n;
-      else if (tokenId === 'CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK')
-        return 500_0000000n;
-      else if (tokenId === 'CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV')
-        return 10000_0000000n;
-      else return 0n;
+    it('calcs fill for interest auction at next ledger if past target block', async () => {
+      let nextLedger = MOCK_LEDGER + 280;
+      let auction = new Auction(BACKSTOP, AuctionType.Interest, {
+        lot: new Map<string, bigint>([
+          [XLM, FixedMath.toFixed(120)],
+          [USDC, FixedMath.toFixed(210)],
+          [EURC, FixedMath.toFixed(34)],
+          [AQUA, FixedMath.toFixed(2500)],
+        ]),
+        bid: new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(728.01456)]]),
+        block: MOCK_LEDGER,
+      });
+
+      mockedGetFillerProfitPct.mockReturnValue(0.1);
+      mockedGetFilledAvailableBalances.mockResolvedValue(
+        new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(1000)]])
+      );
+
+      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+
+      let expectedRequests: Request[] = [
+        {
+          request_type: 8,
+          address: BACKSTOP,
+          amount: 100n,
+        },
+      ];
+      expect(fill.block).toEqual(nextLedger);
+      expect(fill.percent).toEqual(100);
+      expect(fill.requests).toEqual(expectedRequests);
+      expectRelApproxEqual(fill.lotValue, 260.5722, 0.005);
+      expectRelApproxEqual(fill.bidValue, 218.880648, 0.005);
     });
-    mockPoolUser.positions.collateral.set(
-      mockedPool.config.reserveList.indexOf(
-        'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75'
-      ),
-      1n
-    );
-    let requests = await buildFillRequests(auctionBid, auctionData, 100, sorobanHelper);
-    let expectRequests: Request[] = [
-      {
-        request_type: RequestType.FillUserLiquidationAuction,
-        address: user.publicKey(),
-        amount: 100n,
-      },
-      {
-        request_type: RequestType.Repay,
-        address: 'CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV',
-        amount: 10000_0000000n,
-      },
-    ];
-    expect(requests.length).toEqual(2);
-    expect(requests).toEqual(expectRequests);
-  });
 
-  it('test requests does not withdraw below min health factor', async () => {
-    const filler = Keypair.random();
-    const user = Keypair.random();
-    const auctionBid: AuctionBid = {
-      type: BidderSubmissionType.BID,
-      filler: {
-        name: '',
-        keypair: filler,
-        minProfitPct: 0.2,
-        minHealthFactor: 1.2,
-        forceFill: false,
-        supportedBid: [],
-        supportedLot: [],
-      },
-      auctionEntry: {
-        user_id: user.publicKey(),
-        auction_type: AuctionType.Liquidation,
-        filler: filler.publicKey(),
-        start_block: 0,
-        fill_block: 0,
-        updated: 0,
-      },
-    };
-    mockPoolUserEstimate.totalEffectiveLiabilities = 15660;
-    sorobanHelper.loadUserPositionEstimate = jest
-      .fn()
-      .mockReturnValue({ estimate: mockPoolUserEstimate, user: mockPoolUser });
-    let auctionData = {
-      lot: new Map<string, bigint>([
-        ['CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV', 8000_0000000n],
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 10_0000000n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA', 70000_0000000n],
-      ]),
-      block: 123,
-    };
-    sorobanHelper.simBalance = jest.fn().mockImplementation((tokenId: string, userId: string) => {
-      if (tokenId === 'CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA')
-        return 10000_0000000n;
-      else if (tokenId === 'CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK')
-        return 500_0000000n;
-      else if (tokenId === 'CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV')
-        return 10000_000000n;
+    it('calcs fill for interest auction uses db prices when possible', async () => {
+      let nextLedger = MOCK_LEDGER + 1;
+      let auction = new Auction(BACKSTOP, AuctionType.Interest, {
+        lot: new Map<string, bigint>([
+          [XLM, FixedMath.toFixed(120)],
+          [USDC, FixedMath.toFixed(210)],
+          [EURC, FixedMath.toFixed(34)],
+          [AQUA, FixedMath.toFixed(2500)],
+        ]),
+        bid: new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(728.01456)]]),
+        block: MOCK_LEDGER,
+      });
+
+      db.setPriceEntries([
+        {
+          asset_id: XLM,
+          price: 0.3,
+          timestamp: MOCK_TIMESTAMP - 100,
+        },
+      ]);
+
+      mockedGetFillerProfitPct.mockReturnValue(0.1);
+      mockedGetFilledAvailableBalances.mockResolvedValue(
+        new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(1000)]])
+      );
+
+      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+
+      let expectedRequests: Request[] = [
+        {
+          request_type: 8,
+          address: BACKSTOP,
+          amount: 100n,
+        },
+      ];
+      expect(fill.block).toEqual(MOCK_LEDGER + 260);
+      expect(fill.percent).toEqual(100);
+      expect(fill.requests).toEqual(expectedRequests);
+      expectRelApproxEqual(fill.lotValue, 284.6922, 0.005);
+      expectRelApproxEqual(fill.bidValue, 254.805096, 0.005);
     });
-    let requests = await buildFillRequests(auctionBid, auctionData, 100, sorobanHelper);
-    let expectRequests: Request[] = [
-      {
-        request_type: RequestType.FillUserLiquidationAuction,
-        address: user.publicKey(),
-        amount: 100n,
-      },
-      {
-        request_type: RequestType.Repay,
-        address: 'CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA',
-        amount: 9900_0000000n,
-      },
-      {
-        request_type: RequestType.WithdrawCollateral,
-        address: 'CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA',
-        amount: 9223372036854775807n,
-      },
-    ];
-    expect(requests.length).toEqual(3);
-    expect(requests).toEqual(expectRequests);
+
+    it('calcs fill for interest auction respects force fill setting', async () => {
+      let nextLedger = MOCK_LEDGER + 1;
+      let auction = new Auction(BACKSTOP, AuctionType.Interest, {
+        lot: new Map<string, bigint>([
+          [XLM, FixedMath.toFixed(120)],
+          [USDC, FixedMath.toFixed(210)],
+          [EURC, FixedMath.toFixed(34)],
+          [AQUA, FixedMath.toFixed(2500)],
+        ]),
+        bid: new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(2500)]]),
+        block: MOCK_LEDGER,
+      });
+
+      mockedGetFillerProfitPct.mockReturnValue(0.2);
+      mockedGetFilledAvailableBalances.mockResolvedValue(
+        new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(1000)]])
+      );
+
+      filler.forceFill = true;
+      let fill_force = await calculateAuctionFill(
+        filler,
+        auction,
+        nextLedger,
+        mockedSorobanHelper,
+        db
+      );
+
+      filler.forceFill = false;
+      let fill_no_force = await calculateAuctionFill(
+        filler,
+        auction,
+        nextLedger,
+        mockedSorobanHelper,
+        db
+      );
+
+      let expectedRequests: Request[] = [
+        {
+          request_type: 8,
+          address: BACKSTOP,
+          amount: 100n,
+        },
+      ];
+      expect(fill_force.block).toEqual(MOCK_LEDGER + 350);
+      expect(fill_force.percent).toEqual(100);
+      expect(fill_force.requests).toEqual(expectedRequests);
+      expectRelApproxEqual(fill_force.lotValue, 260.5722, 0.005);
+      expectRelApproxEqual(fill_force.bidValue, 312.5, 0.005);
+
+      expect(fill_no_force.block).toEqual(MOCK_LEDGER + 367);
+      expect(fill_no_force.percent).toEqual(100);
+      expect(fill_no_force.requests).toEqual(expectedRequests);
+      expectRelApproxEqual(fill_no_force.lotValue, 260.5722, 0.005);
+      expectRelApproxEqual(fill_no_force.bidValue, 206.25, 0.005);
+    });
+
+    // *** Liquidation Auctions ***
+
+    it('calcs fill for liquidation auction', async () => {
+      let user = Keypair.random().publicKey();
+      let nextLedger = MOCK_LEDGER + 1;
+      let auction = new Auction(user, AuctionType.Liquidation, {
+        lot: new Map<string, bigint>([
+          [USDC, FixedMath.toFixed(15.93)],
+          [EURC, FixedMath.toFixed(16.211)],
+        ]),
+        bid: new Map<string, bigint>([[XLM, FixedMath.toFixed(300.21)]]),
+        block: MOCK_LEDGER,
+      });
+      positionEstimate.totalEffectiveLiabilities = 0;
+      positionEstimate.totalEffectiveCollateral = 1000;
+
+      mockedSorobanHelper.loadUserPositionEstimate.mockResolvedValue({
+        user: {} as PoolUser,
+        estimate: positionEstimate,
+      });
+      mockedGetFillerProfitPct.mockReturnValue(0.1);
+      mockedGetFilledAvailableBalances.mockResolvedValue(
+        new Map<string, bigint>([[USDC, FixedMath.toFixed(100)]])
+      );
+
+      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+
+      let expectedRequests: Request[] = [
+        {
+          request_type: 6,
+          address: user,
+          amount: 100n,
+        },
+      ];
+      expect(fill.block).toEqual(MOCK_LEDGER + 194);
+      expect(fill.percent).toEqual(100);
+      expect(fill.requests).toEqual(expectedRequests);
+      expectRelApproxEqual(fill.lotValue, 32.8213, 0.005);
+      expectRelApproxEqual(fill.bidValue, 29.73769976, 0.005);
+
+      expect(mockedGetFilledAvailableBalances).toHaveBeenCalledWith(
+        filler,
+        [USDC, EURC, XLM],
+        mockedSorobanHelper
+      );
+    });
+
+    it('calcs fill for liquidation auction and repays incoming liabilties and withdraws 0 CF collateral', async () => {
+      let user = Keypair.random().publicKey();
+      let nextLedger = MOCK_LEDGER + 1;
+      let auction = new Auction(user, AuctionType.Liquidation, {
+        lot: new Map<string, bigint>([
+          [USDC, FixedMath.toFixed(15.93)],
+          [EURC, FixedMath.toFixed(16.211)],
+          [AQUA, FixedMath.toFixed(750)],
+        ]),
+        bid: new Map<string, bigint>([[XLM, FixedMath.toFixed(300.21)]]),
+        block: MOCK_LEDGER,
+      });
+      positionEstimate.totalEffectiveLiabilities = 0;
+      positionEstimate.totalEffectiveCollateral = 1000;
+
+      mockedSorobanHelper.loadUserPositionEstimate.mockResolvedValue({
+        user: {} as PoolUser,
+        estimate: positionEstimate,
+      });
+      mockedGetFillerProfitPct.mockReturnValue(0.1);
+      mockedGetFilledAvailableBalances.mockResolvedValue(
+        new Map<string, bigint>([
+          [USDC, FixedMath.toFixed(100)],
+          [XLM, FixedMath.toFixed(500)],
+        ])
+      );
+
+      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+
+      let expectedRequests: Request[] = [
+        {
+          request_type: 6,
+          address: user,
+          amount: 100n,
+        },
+        {
+          request_type: 5,
+          address: XLM,
+          amount: 3003808157n,
+        },
+        {
+          request_type: 3,
+          address: AQUA,
+          amount: BigInt('9223372036854775807'),
+        },
+      ];
+      expect(fill.block).toEqual(MOCK_LEDGER + 191);
+      expect(fill.percent).toEqual(100);
+      expect(fill.requests).toEqual(expectedRequests);
+      expectRelApproxEqual(fill.lotValue, 32.7722, 0.005);
+      expectRelApproxEqual(fill.bidValue, 29.73769976, 0.005);
+    });
+
+    it('calcs fill for liquidation auction adds primary collateral', async () => {
+      let user = Keypair.random().publicKey();
+      let nextLedger = MOCK_LEDGER + 186;
+      let auction = new Auction(user, AuctionType.Liquidation, {
+        lot: new Map<string, bigint>([[XLM, FixedMath.toFixed(100000)]]),
+        bid: new Map<string, bigint>([
+          [USDC, FixedMath.toFixed(100)],
+          [EURC, FixedMath.toFixed(7500)],
+        ]),
+        block: MOCK_LEDGER,
+      });
+      positionEstimate.totalEffectiveLiabilities = 0;
+      positionEstimate.totalEffectiveCollateral = 1000;
+
+      mockedSorobanHelper.loadUserPositionEstimate.mockResolvedValue({
+        user: {} as PoolUser,
+        estimate: positionEstimate,
+      });
+      mockedGetFillerProfitPct.mockReturnValue(0.1);
+      mockedGetFilledAvailableBalances.mockResolvedValue(
+        new Map<string, bigint>([
+          [USDC, FixedMath.toFixed(5000)],
+          [XLM, FixedMath.toFixed(500)],
+        ])
+      );
+
+      filler.primaryAsset = USDC;
+      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+
+      let expectedRequests: Request[] = [
+        {
+          request_type: 6,
+          address: user,
+          amount: 100n,
+        },
+        // repays any incoming primary liabilities first
+        {
+          request_type: 5,
+          address: USDC,
+          amount: 101_0182653n,
+        },
+        // adds additional primary collateral to reach min HF
+        {
+          request_type: 2,
+          address: USDC,
+          amount: FixedMath.toFixed(4420),
+        },
+      ];
+      expect(fill.block).toEqual(MOCK_LEDGER + 187);
+      expect(fill.percent).toEqual(100);
+      expect(fill.requests).toEqual(expectedRequests);
+      expectRelApproxEqual(fill.lotValue, 9257.3115, 0.005);
+      expectRelApproxEqual(fill.bidValue, 8378.033243, 0.005);
+    });
+
+    it('calcs fill for liquidation auction scales fill percent down', async () => {
+      let user = Keypair.random().publicKey();
+      let nextLedger = MOCK_LEDGER + 188;
+      let auction = new Auction(user, AuctionType.Liquidation, {
+        lot: new Map<string, bigint>([[XLM, FixedMath.toFixed(100000)]]),
+        bid: new Map<string, bigint>([[XLM, FixedMath.toFixed(85000)]]),
+        block: MOCK_LEDGER,
+      });
+      positionEstimate.totalEffectiveLiabilities = 0;
+      positionEstimate.totalEffectiveCollateral = 1000;
+
+      mockedSorobanHelper.loadUserPositionEstimate.mockResolvedValue({
+        user: {} as PoolUser,
+        estimate: positionEstimate,
+      });
+      mockedGetFillerProfitPct.mockReturnValue(0.1);
+      mockedGetFilledAvailableBalances.mockResolvedValue(new Map<string, bigint>([]));
+
+      filler.primaryAsset = USDC;
+      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+
+      let expectedRequests: Request[] = [
+        {
+          request_type: 6,
+          address: user,
+          amount: 12n,
+        },
+      ];
+      expect(fill.block).toEqual(MOCK_LEDGER + 188);
+      expect(fill.percent).toEqual(12);
+      expect(fill.requests).toEqual(expectedRequests);
+      expectRelApproxEqual(fill.lotValue, 1116.8179, 0.005);
+      expectRelApproxEqual(fill.bidValue, 1010.37453, 0.005);
+    });
+
+    it('calcs fill for liquidation auction delays fill block if filler not healthy', async () => {
+      let user = Keypair.random().publicKey();
+      let nextLedger = MOCK_LEDGER + 123;
+      let auction = new Auction(user, AuctionType.Liquidation, {
+        lot: new Map<string, bigint>([[XLM, FixedMath.toFixed(100000)]]),
+        bid: new Map<string, bigint>([[XLM, FixedMath.toFixed(85000)]]),
+        block: MOCK_LEDGER,
+      });
+      positionEstimate.totalEffectiveLiabilities = 750;
+      positionEstimate.totalEffectiveCollateral = 1000;
+
+      mockedSorobanHelper.loadUserPositionEstimate.mockResolvedValue({
+        user: {} as PoolUser,
+        estimate: positionEstimate,
+      });
+      mockedGetFillerProfitPct.mockReturnValue(0.1);
+      mockedGetFilledAvailableBalances.mockResolvedValue(new Map<string, bigint>([]));
+
+      filler.primaryAsset = USDC;
+      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+
+      let expectedRequests: Request[] = [
+        {
+          request_type: 6,
+          address: user,
+          amount: 100n,
+        },
+      ];
+      expect(fill.block).toEqual(MOCK_LEDGER + 300);
+      expect(fill.percent).toEqual(100);
+      expect(fill.requests).toEqual(expectedRequests);
+      expectRelApproxEqual(fill.lotValue, 9900.8679, 0.005);
+      expectRelApproxEqual(fill.bidValue, 4209.893874, 0.005);
+    });
+
+    it('calcs fill for liquidation auction with repayment, additional collateral, and scaling minor', async () => {
+      let user = Keypair.random().publicKey();
+      let nextLedger = MOCK_LEDGER + 123;
+      let auction = new Auction(user, AuctionType.Liquidation, {
+        lot: new Map<string, bigint>([[XLM, FixedMath.toFixed(100000)]]),
+        bid: new Map<string, bigint>([[XLM, FixedMath.toFixed(85000)]]),
+        block: MOCK_LEDGER,
+      });
+      positionEstimate.totalEffectiveLiabilities = 0;
+      positionEstimate.totalEffectiveCollateral = 1000;
+
+      mockedSorobanHelper.loadUserPositionEstimate.mockResolvedValue({
+        user: {} as PoolUser,
+        estimate: positionEstimate,
+      });
+      mockedGetFillerProfitPct.mockReturnValue(0.1);
+      mockedGetFilledAvailableBalances.mockResolvedValue(
+        new Map<string, bigint>([
+          [XLM, FixedMath.toFixed(15000)],
+          [USDC, FixedMath.toFixed(4000)],
+        ])
+      );
+
+      filler.primaryAsset = USDC;
+      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+
+      let expectedRequests: Request[] = [
+        {
+          request_type: 6,
+          address: user,
+          amount: 94n,
+        },
+        {
+          request_type: 5,
+          address: XLM,
+          amount: FixedMath.toFixed(15000),
+        },
+        {
+          request_type: 2,
+          address: USDC,
+          amount: FixedMath.toFixed(3954),
+        },
+      ];
+      expect(fill.block).toEqual(MOCK_LEDGER + 188);
+      expect(fill.percent).toEqual(94);
+      expect(fill.requests).toEqual(expectedRequests);
+      expectRelApproxEqual(fill.lotValue, 8748.4069, 0.005);
+      expectRelApproxEqual(fill.bidValue, 7914.600483, 0.005);
+    });
+
+    it('calcs fill for liquidation auction with repayment, additional collateral, and scaling large', async () => {
+      let user = Keypair.random().publicKey();
+      let nextLedger = MOCK_LEDGER + 1;
+      let auction = new Auction(user, AuctionType.Liquidation, {
+        lot: new Map<string, bigint>([[EURC, FixedMath.toFixed(9100)]]),
+        bid: new Map<string, bigint>([
+          [USDC, FixedMath.toFixed(500)],
+          [XLM, FixedMath.toFixed(85000)],
+        ]),
+        block: MOCK_LEDGER,
+      });
+      positionEstimate.totalEffectiveLiabilities = 700;
+      positionEstimate.totalEffectiveCollateral = 1000;
+
+      mockedSorobanHelper.loadUserPositionEstimate.mockResolvedValue({
+        user: {} as PoolUser,
+        estimate: positionEstimate,
+      });
+      mockedGetFillerProfitPct.mockReturnValue(0.1);
+      mockedGetFilledAvailableBalances.mockResolvedValue(
+        new Map<string, bigint>([
+          [XLM, FixedMath.toFixed(2000)],
+          [USDC, FixedMath.toFixed(600)],
+        ])
+      );
+
+      filler.primaryAsset = USDC;
+      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+
+      let expectedRequests: Request[] = [
+        {
+          request_type: 6,
+          address: user,
+          amount: 15n,
+        },
+        {
+          request_type: 5,
+          address: USDC,
+          amount: 757637015n,
+        },
+        {
+          request_type: 5,
+          address: XLM,
+          amount: FixedMath.toFixed(2000),
+        },
+        {
+          request_type: 2,
+          address: USDC,
+          amount: FixedMath.toFixed(495),
+        },
+      ];
+      expect(fill.block).toEqual(MOCK_LEDGER + 197);
+      expect(fill.percent).toEqual(15);
+      expect(fill.requests).toEqual(expectedRequests);
+      expectRelApproxEqual(fill.lotValue, 1476.3058, 0.005);
+      expectRelApproxEqual(fill.bidValue, 1338.709125, 0.005);
+    });
+
+    // *** Bad Debt Auctions ***
+
+    it('calcs fill for bad debt auction', async () => {
+      let user = Keypair.random().publicKey();
+      let nextLedger = MOCK_LEDGER + 1;
+      let auction = new Auction(user, AuctionType.BadDebt, {
+        lot: new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(4200)]]),
+        bid: new Map<string, bigint>([
+          [XLM, FixedMath.toFixed(10000)],
+          [USDC, FixedMath.toFixed(500)],
+        ]),
+        block: MOCK_LEDGER,
+      });
+      positionEstimate.totalEffectiveLiabilities = 0;
+      positionEstimate.totalEffectiveCollateral = 1000;
+
+      mockedSorobanHelper.loadUserPositionEstimate.mockResolvedValue({
+        user: {} as PoolUser,
+        estimate: positionEstimate,
+      });
+      mockedGetFillerProfitPct.mockReturnValue(0.1);
+      mockedGetFilledAvailableBalances.mockResolvedValue(
+        new Map<string, bigint>([
+          [USDC, FixedMath.toFixed(4200)],
+          [XLM, FixedMath.toFixed(5000)],
+        ])
+      );
+
+      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+
+      let expectedRequests: Request[] = [
+        {
+          request_type: 7,
+          address: user,
+          amount: 100n,
+        },
+        {
+          request_type: 5,
+          address: XLM,
+          amount: FixedMath.toFixed(5000),
+        },
+        {
+          request_type: 5,
+          address: USDC,
+          amount: 5050912865n,
+        },
+      ];
+      expect(fill.block).toEqual(MOCK_LEDGER + 157);
+      expect(fill.percent).toEqual(100);
+      expect(fill.requests).toEqual(expectedRequests);
+      expectRelApproxEqual(fill.lotValue, 1648.5, 0.005);
+      expectRelApproxEqual(fill.bidValue, 1495.503014, 0.005);
+
+      expect(mockedGetFilledAvailableBalances).toHaveBeenCalledWith(
+        filler,
+        [XLM, USDC],
+        mockedSorobanHelper
+      );
+    });
   });
 
-  it('test requests does not repay or withdraw without oracle price', async () => {});
-});
+  describe('valueBackstopTokenInUSDC', () => {
+    it('values from sim', async () => {
+      let lpTokenToUSDC = 0.5;
+      mockedSorobanHelper.simLPTokenToUSDC.mockResolvedValue(FixedMath.toFixed(lpTokenToUSDC));
+      mockedSorobanHelper.loadBackstopToken.mockResolvedValue({
+        lpTokenPrice: 1.25,
+      } as BackstopToken);
 
-describe('scaleAuction', () => {
-  it('test auction scaling', () => {
-    const auctionData = {
-      lot: new Map<string, bigint>([
-        ['asset2', 1_0000000n],
-        ['asset3', 5_0000001n],
-      ]),
-      bid: new Map<string, bigint>([
-        ['asset1', 100_0000000n],
-        ['asset2', 200_0000001n],
-      ]),
-      block: 123,
-    };
-    let scaledAuction = scaleAuction(auctionData, 123, 100);
-    expect(scaledAuction.block).toEqual(123);
-    expect(scaledAuction.bid.size).toEqual(2);
-    expect(scaledAuction.bid.get('asset1')).toEqual(100_0000000n);
-    expect(scaledAuction.bid.get('asset2')).toEqual(200_0000001n);
-    expect(scaledAuction.lot.size).toEqual(0);
+      let value = await valueBackstopTokenInUSDC(mockedSorobanHelper, FixedMath.toFixed(2));
 
-    // 100 blocks -> 100 percent, validate lot is rounded down
-    scaledAuction = scaleAuction(auctionData, 223, 100);
-    expect(scaledAuction.block).toEqual(223);
-    expect(scaledAuction.bid.size).toEqual(2);
-    expect(scaledAuction.bid.get('asset1')).toEqual(100_0000000n);
-    expect(scaledAuction.bid.get('asset2')).toEqual(200_0000001n);
-    expect(scaledAuction.lot.size).toEqual(2);
-    expect(scaledAuction.lot.get('asset2')).toEqual(5000000n);
-    expect(scaledAuction.lot.get('asset3')).toEqual(2_5000000n);
+      expect(value).toEqual(lpTokenToUSDC);
+      expect(mockedSorobanHelper.loadBackstopToken).toHaveBeenCalledTimes(0);
+    });
 
-    // 100 blocks -> 50 percent, validate bid is rounded up
-    scaledAuction = scaleAuction(auctionData, 223, 50);
-    expect(scaledAuction.block).toEqual(223);
-    expect(scaledAuction.bid.size).toEqual(2);
-    expect(scaledAuction.bid.get('asset1')).toEqual(50_0000000n);
-    expect(scaledAuction.bid.get('asset2')).toEqual(100_0000001n);
-    expect(scaledAuction.lot.size).toEqual(2);
-    expect(scaledAuction.lot.get('asset2')).toEqual(2500000n);
-    expect(scaledAuction.lot.get('asset3')).toEqual(1_2500000n);
+    it('values from spot price if sim fails', async () => {
+      mockedSorobanHelper.simLPTokenToUSDC.mockResolvedValue(undefined);
+      mockedSorobanHelper.loadBackstopToken.mockResolvedValue({
+        lpTokenPrice: 1.25,
+      } as BackstopToken);
 
-    // 200 blocks -> 100 percent (is same)
-    scaledAuction = scaleAuction(auctionData, 323, 100);
-    expect(scaledAuction.block).toEqual(323);
-    expect(scaledAuction.bid.size).toEqual(2);
-    expect(scaledAuction.bid.get('asset1')).toEqual(100_0000000n);
-    expect(scaledAuction.bid.get('asset2')).toEqual(200_0000001n);
-    expect(scaledAuction.lot.size).toEqual(2);
-    expect(scaledAuction.lot.get('asset2')).toEqual(1_0000000n);
-    expect(scaledAuction.lot.get('asset3')).toEqual(5_0000001n);
+      let value = await valueBackstopTokenInUSDC(mockedSorobanHelper, FixedMath.toFixed(2));
 
-    // 200 blocks -> 75 percent, validate bid is rounded up and lot is rounded down
-    scaledAuction = scaleAuction(auctionData, 323, 75);
-    expect(scaledAuction.block).toEqual(323);
-    expect(scaledAuction.bid.size).toEqual(2);
-    expect(scaledAuction.bid.get('asset1')).toEqual(75_0000000n);
-    expect(scaledAuction.bid.get('asset2')).toEqual(150_0000001n);
-    expect(scaledAuction.lot.size).toEqual(2);
-    expect(scaledAuction.lot.get('asset2')).toEqual(7500000n);
-    expect(scaledAuction.lot.get('asset3')).toEqual(3_7500000n);
-
-    // 300 blocks -> 100 percent
-    scaledAuction = scaleAuction(auctionData, 423, 100);
-    expect(scaledAuction.block).toEqual(423);
-    expect(scaledAuction.bid.size).toEqual(2);
-    expect(scaledAuction.bid.get('asset1')).toEqual(50_0000000n);
-    expect(scaledAuction.bid.get('asset2')).toEqual(100_0000001n);
-    expect(scaledAuction.lot.size).toEqual(2);
-    expect(scaledAuction.lot.get('asset2')).toEqual(1_0000000n);
-    expect(scaledAuction.lot.get('asset3')).toEqual(5_0000001n);
-
-    // 400 blocks -> 100 percent
-    scaledAuction = scaleAuction(auctionData, 523, 100);
-    expect(scaledAuction.block).toEqual(523);
-    expect(scaledAuction.bid.size).toEqual(0);
-    expect(scaledAuction.lot.size).toEqual(2);
-    expect(scaledAuction.lot.get('asset2')).toEqual(1_0000000n);
-    expect(scaledAuction.lot.get('asset3')).toEqual(5_0000001n);
-
-    // 500 blocks -> 100 percent (unchanged)
-    scaledAuction = scaleAuction(auctionData, 623, 100);
-    expect(scaledAuction.block).toEqual(623);
-    expect(scaledAuction.bid.size).toEqual(0);
-    expect(scaledAuction.lot.size).toEqual(2);
-    expect(scaledAuction.lot.get('asset2')).toEqual(1_0000000n);
-    expect(scaledAuction.lot.get('asset3')).toEqual(5_0000001n);
-  });
-
-  it('test auction scaling with 1 stroop', () => {
-    const auctionData = {
-      lot: new Map<string, bigint>([['asset2', 1n]]),
-      bid: new Map<string, bigint>([['asset1', 1n]]),
-      block: 123,
-    };
-    // 1 blocks -> 10 percent
-    let scaledAuction = scaleAuction(auctionData, 124, 10);
-    expect(scaledAuction.block).toEqual(124);
-    expect(scaledAuction.bid.size).toEqual(1);
-    expect(scaledAuction.bid.get('asset1')).toEqual(1n);
-    expect(scaledAuction.lot.size).toEqual(0);
-
-    // 399 blocks -> 10 percent
-    scaledAuction = scaleAuction(auctionData, 522, 10);
-    expect(scaledAuction.block).toEqual(522);
-    expect(scaledAuction.bid.size).toEqual(1);
-    expect(scaledAuction.bid.get('asset1')).toEqual(1n);
-    expect(scaledAuction.lot.size).toEqual(0);
-
-    // 399 blocks -> 100 percent
-    scaledAuction = scaleAuction(auctionData, 522, 100);
-    expect(scaledAuction.block).toEqual(522);
-    expect(scaledAuction.bid.size).toEqual(1);
-    expect(scaledAuction.bid.get('asset1')).toEqual(1n);
-    expect(scaledAuction.lot.size).toEqual(1);
-    expect(scaledAuction.lot.get('asset2')).toEqual(1n);
+      expect(value).toEqual(1.25 * 2);
+      expect(mockedSorobanHelper.loadBackstopToken).toHaveBeenCalledTimes(1);
+    });
   });
 });

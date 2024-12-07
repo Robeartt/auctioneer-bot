@@ -1,7 +1,7 @@
 import { PoolUser, Positions, PositionsEstimate } from '@blend-capital/blend-sdk';
 import { updateUser } from '../src/user.js';
 import { AuctioneerDatabase, UserEntry } from '../src/utils/db.js';
-import { inMemoryAuctioneerDb, mockedPool } from './helpers/mocks.js';
+import { inMemoryAuctioneerDb, mockPool } from './helpers/mocks.js';
 
 describe('updateUser', () => {
   let db: AuctioneerDatabase;
@@ -27,26 +27,26 @@ describe('updateUser', () => {
       ),
       new Map()
     );
-    updateUser(db, mockedPool, user, user_estimate);
+    updateUser(db, mockPool, user, user_estimate);
 
     let user_entry = db.getUserEntry('GPUBKEY1');
     expect(user_entry).toBeDefined();
     expect(user_entry?.user_id).toEqual('GPUBKEY1');
     expect(user_entry?.health_factor).toEqual(2);
     expect(user_entry?.liabilities.size).toEqual(2);
-    expect(user_entry?.liabilities.get(mockedPool.config.reserveList[0])).toEqual(BigInt(12345));
-    expect(user_entry?.liabilities.get(mockedPool.config.reserveList[1])).toEqual(BigInt(54321));
+    expect(user_entry?.liabilities.get(mockPool.config.reserveList[0])).toEqual(BigInt(12345));
+    expect(user_entry?.liabilities.get(mockPool.config.reserveList[1])).toEqual(BigInt(54321));
     expect(user_entry?.collateral.size).toEqual(1);
-    expect(user_entry?.collateral.get(mockedPool.config.reserveList[3])).toEqual(BigInt(789));
-    expect(user_entry?.updated).toEqual(mockedPool.config.latestLedger);
+    expect(user_entry?.collateral.get(mockPool.config.reserveList[3])).toEqual(BigInt(789));
+    expect(user_entry?.updated).toEqual(mockPool.config.latestLedger);
   });
 
   it('deletes existing user without liabilities', async () => {
     let user_entry: UserEntry = {
       user_id: 'GPUBKEY1',
       health_factor: 2,
-      collateral: new Map([[mockedPool.config.reserveList[3], BigInt(789)]]),
-      liabilities: new Map([[mockedPool.config.reserveList[2], BigInt(789)]]),
+      collateral: new Map([[mockPool.config.reserveList[3], BigInt(789)]]),
+      liabilities: new Map([[mockPool.config.reserveList[2], BigInt(789)]]),
       updated: 123,
     };
     db.setUserEntry(user_entry);
@@ -60,7 +60,7 @@ describe('updateUser', () => {
       new Positions(new Map(), new Map([[3, BigInt(789)]]), new Map([[2, BigInt(111)]])),
       new Map()
     );
-    updateUser(db, mockedPool, user, user_estimate);
+    updateUser(db, mockPool, user, user_estimate);
 
     let new_user_entry = db.getUserEntry('GPUBKEY1');
     expect(new_user_entry).toBeUndefined();

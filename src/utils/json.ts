@@ -1,3 +1,5 @@
+import { ContractError, ContractErrorType } from '@blend-capital/blend-sdk';
+
 function replacer(_: any, value: any): any {
   if (typeof value === 'bigint') {
     return { type: 'bigint', value: value.toString() };
@@ -45,4 +47,25 @@ export function stringify(value: any, space?: string | number): string {
  */
 export function parse<T>(jsonString: string): T {
   return JSON.parse(jsonString, reviver) as T;
+}
+
+/**
+ * Safely serialize an error object to a JSON object that is safe to stringify. This does not
+ * include the stack trace to make it safe for alerts and external logs.
+ * @param error - The thrown error
+ * @returns The object representation of the error
+ */
+export function serializeError(error: any): any {
+  if (error instanceof ContractError) {
+    return {
+      type: 'ContractError',
+      message: ContractErrorType[error.type],
+    };
+  } else {
+    return {
+      type: 'Error',
+      message: error?.message,
+      name: error?.name,
+    };
+  }
 }

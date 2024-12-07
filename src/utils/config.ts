@@ -5,8 +5,10 @@ import { parse } from './json.js';
 export interface Filler {
   name: string;
   keypair: Keypair;
-  minProfitPct: number;
+  primaryAsset: string;
+  defaultProfitPct: number;
   minHealthFactor: number;
+  minPrimaryCollateral: bigint;
   forceFill: boolean;
   supportedBid: string[];
   supportedLot: string[];
@@ -16,6 +18,12 @@ export interface PriceSource {
   assetId: string;
   type: 'coinbase' | 'binance';
   symbol: string;
+}
+
+export interface AuctionProfit {
+  profitPct: number;
+  supportedBid: string[];
+  supportedLot: string[];
 }
 
 export interface AppConfig {
@@ -29,7 +37,8 @@ export interface AppConfig {
   blndAddress: string;
   keypair: Keypair;
   fillers: Filler[];
-  priceSources: PriceSource[];
+  priceSources: PriceSource[] | undefined;
+  profits: AuctionProfit[] | undefined;
   slackWebhook: string | undefined;
 }
 
@@ -59,15 +68,21 @@ export function validateAppConfig(config: any): boolean {
     typeof config.blndAddress !== 'string' ||
     typeof config.keypair !== 'string' ||
     !Array.isArray(config.fillers) ||
-    !Array.isArray(config.priceSources) ||
+    (config.priceSources !== undefined && !Array.isArray(config.priceSources)) ||
+    (config.profits !== undefined && !Array.isArray(config.profits)) ||
     (config.slackWebhook !== undefined && typeof config.slackWebhook !== 'string')
   ) {
+    console.log('Invalid app config');
     return false;
   }
 
   config.keypair = Keypair.fromSecret(config.keypair);
 
-  return config.fillers.every(validateFiller) && config.priceSources.every(validatePriceSource);
+  return (
+    config.fillers.every(validateFiller) &&
+    (config.priceSources === undefined || config.priceSources.every(validatePriceSource)) &&
+    (config.profits === undefined || config.profits.every(validateAuctionProfit))
+  );
 }
 
 export function validateFiller(filler: any): boolean {
@@ -78,17 +93,21 @@ export function validateFiller(filler: any): boolean {
   if (
     typeof filler.name === 'string' &&
     typeof filler.keypair === 'string' &&
-    typeof filler.minProfitPct === 'number' &&
+    typeof filler.defaultProfitPct === 'number' &&
     typeof filler.minHealthFactor === 'number' &&
     typeof filler.forceFill === 'boolean' &&
+    typeof filler.primaryAsset === 'string' &&
+    typeof filler.minPrimaryCollateral === 'string' &&
     Array.isArray(filler.supportedBid) &&
     filler.supportedBid.every((item: any) => typeof item === 'string') &&
     Array.isArray(filler.supportedLot) &&
     filler.supportedLot.every((item: any) => typeof item === 'string')
   ) {
     filler.keypair = Keypair.fromSecret(filler.keypair);
+    filler.minPrimaryCollateral = BigInt(filler.minPrimaryCollateral);
     return true;
   }
+  console.log('Invalid filler', filler);
   return false;
 }
 
@@ -104,6 +123,25 @@ export function validatePriceSource(priceSource: any): boolean {
   ) {
     return true;
   }
+  console.log('Invalid price source', priceSource);
+  return false;
+}
 
+export function validateAuctionProfit(profits: any): boolean {
+  if (typeof profits !== 'object' || profits === null) {
+    return false;
+  }
+
+  if (
+    typeof profits.profitPct === 'number' &&
+    Array.isArray(profits.supportedBid) &&
+    profits.supportedBid.every((item: any) => typeof item === 'string') &&
+    Array.isArray(profits.supportedLot) &&
+    profits.supportedLot.every((item: any) => typeof item === 'string')
+  ) {
+    return true;
+  }
+
+  console.log('Invalid profit', profits);
   return false;
 }

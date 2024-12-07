@@ -1,6 +1,11 @@
 // config.test.ts
 import { Keypair } from '@stellar/stellar-sdk';
-import { validateAppConfig, validateFiller, validatePriceSource } from '../../src/utils/config';
+import {
+  validateAppConfig,
+  validateAuctionProfit,
+  validateFiller,
+  validatePriceSource,
+} from '../../src/utils/config';
 
 describe('validateAppConfig', () => {
   it('should return false for non-object config', () => {
@@ -41,8 +46,10 @@ describe('validateAppConfig', () => {
         {
           name: 'filler',
           keypair: Keypair.random().secret(),
-          minProfitPct: 1,
+          defaultProfitPct: 1,
           minHealthFactor: 1,
+          primaryAsset: 'asset',
+          minPrimaryCollateral: '100',
           forceFill: true,
           supportedBid: ['bid'],
           supportedLot: ['lot'],
@@ -65,8 +72,10 @@ describe('validateFiller', () => {
     const invalidFiller = {
       name: 'filler',
       keypair: 'secret',
-      minProfitPct: 1,
+      defaultProfitPct: 1,
       minHealthFactor: 1,
+      primaryAsset: 'asset',
+      minPrimaryCollateral: '100',
       forceFill: true,
       supportedBid: ['bid'],
       supportedLot: 123, // Invalid type
@@ -78,8 +87,10 @@ describe('validateFiller', () => {
     const validFiller = {
       name: 'filler',
       keypair: Keypair.random().secret(),
-      minProfitPct: 1,
+      defaultProfitPct: 1,
       minHealthFactor: 1,
+      primaryAsset: 'asset',
+      minPrimaryCollateral: '100',
       forceFill: true,
       supportedBid: ['bid'],
       supportedLot: ['lot'],
@@ -110,5 +121,30 @@ describe('validatePriceSource', () => {
       symbol: 'symbol',
     };
     expect(validatePriceSource(validPriceSource)).toBe(true);
+  });
+});
+
+describe('validateAuctionProfit', () => {
+  it('should return false for non-object profits', () => {
+    expect(validateAuctionProfit(null)).toBe(false);
+    expect(validateAuctionProfit('string')).toBe(false);
+  });
+
+  it('should return false for profits with missing or incorrect properties', () => {
+    const invalidProfits = {
+      profitPct: 1,
+      supportedBid: ['asset1', 'asset2'],
+      supportedLot: 'asset2', // Invalid type
+    };
+    expect(validateAuctionProfit(invalidProfits)).toBe(false);
+  });
+
+  it('should return true for valid profits', () => {
+    const validProfits = {
+      profitPct: 1,
+      supportedBid: ['asset1', 'asset2'],
+      supportedLot: ['asset2'],
+    };
+    expect(validateAuctionProfit(validProfits)).toBe(true);
   });
 });

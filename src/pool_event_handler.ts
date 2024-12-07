@@ -1,6 +1,7 @@
 import { PoolEventType } from '@blend-capital/blend-sdk';
-import { canFillerBid } from './auction.js';
+import { ChildProcess } from 'child_process';
 import { EventType, PoolEventEvent } from './events.js';
+import { canFillerBid } from './filler.js';
 import { updateUser } from './user.js';
 import { APP_CONFIG } from './utils/config.js';
 import { AuctioneerDatabase, AuctionEntry, AuctionType } from './utils/db.js';
@@ -10,7 +11,6 @@ import { deadletterEvent, sendEvent } from './utils/messages.js';
 import { sendSlackNotification } from './utils/slack_notifier.js';
 import { SorobanHelper } from './utils/soroban_helper.js';
 import { WorkSubmission } from './work_submitter.js';
-import { ChildProcess } from 'child_process';
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 200;
 
@@ -43,17 +43,17 @@ export class PoolEventHandler {
         await this.handlePoolEvent(poolEvent);
         logger.info(`Successfully processed event. ${poolEvent.event.id}`);
         return;
-      } catch (error) {
+      } catch (error: any) {
         retries++;
         if (retries >= MAX_RETRIES) {
           try {
             await deadletterEvent(poolEvent);
-          } catch (error) {
-            logger.error(`Error sending event to dead letter queue. Error: ${error}`);
+          } catch (error: any) {
+            logger.error(`Error sending event to dead letter queue.`, error);
           }
           return;
         }
-        logger.warn(`Error processing event. ${poolEvent.event.id} Error: ${error}`);
+        logger.warn(`Error processing event. ${poolEvent.event.id}.`, error);
         logger.warn(
           `Retry ${retries + 1}/${MAX_RETRIES}. Waiting ${RETRY_DELAY}ms before next attempt.`
         );
@@ -132,6 +132,7 @@ export class PoolEventHandler {
       case PoolEventType.FillAuction: {
         const logMessage = `Auction Fill Event\nType ${AuctionType[poolEvent.event.auctionType]}\nFiller: ${poolEvent.event.from}\nUser: ${poolEvent.event.user}\nFill Percent: ${poolEvent.event.fillAmount}\nTx Hash: ${poolEvent.event.txHash}\n`;
         await sendSlackNotification(logMessage);
+        logger.info(logMessage);
         if (poolEvent.event.fillAmount === BigInt(100)) {
           // auction was fully filled, remove from ongoing auctions
           let runResult = this.db.deleteAuctionEntry(
@@ -139,19 +140,27 @@ export class PoolEventHandler {
             poolEvent.event.auctionType
           );
           if (runResult.changes !== 0) {
-            logger.info(logMessage);
+            logger.info(
+              `Auction Deleted\nType: ${AuctionType[poolEvent.event.auctionType]}\nUser: ${poolEvent.event.user}`
+            );
           }
-          if (poolEvent.event.auctionType === AuctionType.Liquidation) {
-            const { estimate: userPositionsEstimate, user } =
-              await this.sorobanHelper.loadUserPositionEstimate(poolEvent.event.user);
-            updateUser(this.db, pool, user, userPositionsEstimate, poolEvent.event.ledger);
-          } else if (poolEvent.event.auctionType === AuctionType.BadDebt) {
-            sendEvent(this.worker, {
-              type: EventType.CHECK_USER,
-              timestamp: Date.now(),
-              userId: APP_CONFIG.backstopAddress,
-            });
-          }
+        }
+        if (poolEvent.event.auctionType === AuctionType.Liquidation) {
+          const { estimate: userPositionsEstimate, user } =
+            await this.sorobanHelper.loadUserPositionEstimate(poolEvent.event.user);
+          updateUser(this.db, pool, user, userPositionsEstimate, poolEvent.event.ledger);
+          const { estimate: fillerPositionsEstimate, user: filler } =
+            await this.sorobanHelper.loadUserPositionEstimate(poolEvent.event.from);
+          updateUser(this.db, pool, filler, fillerPositionsEstimate, poolEvent.event.ledger);
+        } else if (poolEvent.event.auctionType === AuctionType.BadDebt) {
+          const { estimate: fillerPositionsEstimate, user: filler } =
+            await this.sorobanHelper.loadUserPositionEstimate(poolEvent.event.from);
+          updateUser(this.db, pool, filler, fillerPositionsEstimate, poolEvent.event.ledger);
+          sendEvent(this.worker, {
+            type: EventType.CHECK_USER,
+            timestamp: Date.now(),
+            userId: APP_CONFIG.backstopAddress,
+          });
         }
         break;
       }

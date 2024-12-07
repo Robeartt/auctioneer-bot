@@ -11,10 +11,10 @@ import { PoolEventHandler } from '../src/pool_event_handler.js';
 import { updateUser } from '../src/user.js';
 import { APP_CONFIG, AppConfig } from '../src/utils/config.js';
 import { AuctioneerDatabase, AuctionEntry, AuctionType } from '../src/utils/db.js';
-import { SorobanHelper } from '../src/utils/soroban_helper.js';
-import { inMemoryAuctioneerDb, mockedPool } from './helpers/mocks.js';
 import { logger } from '../src/utils/logger.js';
 import { deadletterEvent, sendEvent } from '../src/utils/messages.js';
+import { SorobanHelper } from '../src/utils/soroban_helper.js';
+import { inMemoryAuctioneerDb, mockPool } from './helpers/mocks.js';
 
 jest.mock('../src/user.js');
 jest.mock('../src/utils/soroban_helper.js');
@@ -34,7 +34,7 @@ jest.mock('../src/utils/config.js', () => {
       {
         name: 'filler1',
         keypair: Keypair.random(),
-        minProfitPct: 0.05,
+        defaultProfitPct: 0.05,
         minHealthFactor: 1.1,
         forceFill: true,
         supportedBid: ['USD', 'BTC', 'LP'],
@@ -43,7 +43,7 @@ jest.mock('../src/utils/config.js', () => {
       {
         name: 'filler2',
         keypair: Keypair.random(),
-        minProfitPct: 0.08,
+        defaultProfitPct: 0.08,
         minHealthFactor: 1.1,
         forceFill: true,
         supportedBid: ['USD', 'ETH', 'XLM'],
@@ -71,7 +71,7 @@ describe('poolEventHandler', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     db = inMemoryAuctioneerDb();
-    mockedSorobanHelper.loadPool.mockResolvedValue(mockedPool);
+    mockedSorobanHelper.loadPool.mockResolvedValue(mockPool);
     poolEventHandler = new PoolEventHandler(db, mockedSorobanHelper, mockedWorkerProcess);
     const fixedTimestamp = 1609459200000;
     Date.now = jest.fn(() => fixedTimestamp);
@@ -104,7 +104,7 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: 'mockedPoolId',
+        contractId: 'mockPoolId',
         contractType: BlendContractType.Pool,
         ledger: 12350,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
@@ -129,7 +129,7 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: 'mockedPoolId',
+        contractId: 'mockPoolId',
         contractType: BlendContractType.Pool,
         ledger: 12350,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
@@ -143,14 +143,14 @@ describe('poolEventHandler', () => {
         },
       },
     };
-    mockedSorobanHelper.loadPool
-      .mockRejectedValueOnce(new Error('Temporary error'))
-      .mockResolvedValue(mockedPool);
+    let error = new Error('Temporary error');
+    mockedSorobanHelper.loadPool.mockRejectedValueOnce(error).mockResolvedValue(mockPool);
     await poolEventHandler.processEventWithRetryAndDeadLetter(poolEvent);
 
     expect(mockedSorobanHelper.loadPool).toHaveBeenCalledTimes(2);
     expect(logger.warn).toHaveBeenCalledWith(
-      `Error processing event. ${poolEvent.event.id} Error: Error: Temporary error`
+      `Error processing event. ${poolEvent.event.id}.`,
+      error
     );
     expect(logger.info).toHaveBeenCalledWith(`Successfully processed event. ${poolEvent.event.id}`);
   });
@@ -161,7 +161,7 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: 'mockedPoolId',
+        contractId: 'mockPoolId',
         contractType: BlendContractType.Pool,
         ledger: 12350,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
@@ -188,7 +188,7 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: 'mockedPoolId',
+        contractId: 'mockPoolId',
         contractType: BlendContractType.Pool,
         ledger: 12350,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
@@ -203,9 +203,11 @@ describe('poolEventHandler', () => {
       },
     };
 
-    mockedSorobanHelper.loadPool.mockRejectedValue(new Error('Permanent error'));
+    let error = new Error('Permanent error');
+    mockedSorobanHelper.loadPool.mockRejectedValue(error);
+    let mocked_error = new Error('Mocked error');
     const mockDeadLetterEvent = deadletterEvent as jest.MockedFunction<typeof deadletterEvent>;
-    mockDeadLetterEvent.mockRejectedValue(new Error('Mocked error'));
+    mockDeadLetterEvent.mockRejectedValue(mocked_error);
 
     await poolEventHandler.processEventWithRetryAndDeadLetter(poolEvent);
 
@@ -213,7 +215,8 @@ describe('poolEventHandler', () => {
     expect(deadletterEvent).toHaveBeenCalledWith(poolEvent);
     expect(logger.error).toHaveBeenNthCalledWith(
       1,
-      `Error sending event to dead letter queue. Error: Error: Mocked error`
+      `Error sending event to dead letter queue.`,
+      mocked_error
     );
   });
 
@@ -224,13 +227,13 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: mockedPool.id,
+        contractId: mockPool.id,
         contractType: BlendContractType.Pool,
         ledger,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
         txHash: '0x123',
         eventType: PoolEventType.SupplyCollateral,
-        assetId: mockedPool.config.reserveList[0],
+        assetId: mockPool.config.reserveList[0],
         from: pool_user,
         amount: BigInt(1000),
         bTokensMinted: BigInt(900),
@@ -239,7 +242,7 @@ describe('poolEventHandler', () => {
 
     await poolEventHandler.handlePoolEvent(poolEvent);
 
-    expect(mockedUpdateUser).toHaveBeenCalledWith(db, mockedPool, user, estimate, ledger);
+    expect(mockedUpdateUser).toHaveBeenCalledWith(db, mockPool, user, estimate, ledger);
   });
 
   it('updates user data for withdraw collateral event', async () => {
@@ -249,13 +252,13 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: mockedPool.id,
+        contractId: mockPool.id,
         contractType: BlendContractType.Pool,
         ledger,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
         txHash: '0x123',
         eventType: PoolEventType.WithdrawCollateral,
-        assetId: mockedPool.config.reserveList[0],
+        assetId: mockPool.config.reserveList[0],
         from: pool_user,
         amount: BigInt(1000),
         bTokensBurned: BigInt(900),
@@ -264,7 +267,7 @@ describe('poolEventHandler', () => {
 
     await poolEventHandler.handlePoolEvent(poolEvent);
 
-    expect(mockedUpdateUser).toHaveBeenCalledWith(db, mockedPool, user, estimate, ledger);
+    expect(mockedUpdateUser).toHaveBeenCalledWith(db, mockPool, user, estimate, ledger);
   });
 
   it('updates user data for borrow event', async () => {
@@ -274,13 +277,13 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: mockedPool.id,
+        contractId: mockPool.id,
         contractType: BlendContractType.Pool,
         ledger,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
         txHash: '0x123',
         eventType: PoolEventType.Borrow,
-        assetId: mockedPool.config.reserveList[0],
+        assetId: mockPool.config.reserveList[0],
         from: pool_user,
         amount: BigInt(1000),
         dTokensMinted: BigInt(900),
@@ -289,7 +292,7 @@ describe('poolEventHandler', () => {
 
     await poolEventHandler.handlePoolEvent(poolEvent);
 
-    expect(mockedUpdateUser).toHaveBeenCalledWith(db, mockedPool, user, estimate, ledger);
+    expect(mockedUpdateUser).toHaveBeenCalledWith(db, mockPool, user, estimate, ledger);
   });
 
   it('updates user data for repay event', async () => {
@@ -299,13 +302,13 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: mockedPool.id,
+        contractId: mockPool.id,
         contractType: BlendContractType.Pool,
         ledger,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
         txHash: '0x123',
         eventType: PoolEventType.Repay,
-        assetId: mockedPool.config.reserveList[0],
+        assetId: mockPool.config.reserveList[0],
         from: pool_user,
         amount: BigInt(1000),
         dTokensBurned: BigInt(900),
@@ -314,7 +317,7 @@ describe('poolEventHandler', () => {
 
     await poolEventHandler.handlePoolEvent(poolEvent);
 
-    expect(mockedUpdateUser).toHaveBeenCalledWith(db, mockedPool, user, estimate, ledger);
+    expect(mockedUpdateUser).toHaveBeenCalledWith(db, mockPool, user, estimate, ledger);
   });
 
   it('finds filler and tracks auction for new liquidation event', async () => {
@@ -325,7 +328,7 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: mockedPool.id,
+        contractId: mockPool.id,
         contractType: BlendContractType.Pool,
         ledger,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
@@ -361,7 +364,7 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: mockedPool.id,
+        contractId: mockPool.id,
         contractType: BlendContractType.Pool,
         ledger,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
@@ -397,7 +400,7 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: mockedPool.id,
+        contractId: mockPool.id,
         contractType: BlendContractType.Pool,
         ledger,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
@@ -435,7 +438,7 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: mockedPool.id,
+        contractId: mockPool.id,
         contractType: BlendContractType.Pool,
         ledger,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
@@ -487,7 +490,7 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: mockedPool.id,
+        contractId: mockPool.id,
         contractType: BlendContractType.Pool,
         ledger,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
@@ -534,7 +537,7 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: mockedPool.id,
+        contractId: mockPool.id,
         contractType: BlendContractType.Pool,
         ledger: 12345,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
@@ -557,7 +560,7 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: mockedPool.id,
+        contractId: mockPool.id,
         contractType: BlendContractType.Pool,
         ledger: 12350,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
@@ -576,7 +579,7 @@ describe('poolEventHandler', () => {
     expect(entries.length).toEqual(1);
     let deletedAuction = db.getAuctionEntry(pool_user, AuctionType.Liquidation);
     expect(deletedAuction).toBeUndefined();
-    expect(mockedUpdateUser).toHaveBeenCalledWith(db, mockedPool, user, estimate, 12350);
+    expect(mockedUpdateUser).toHaveBeenCalledWith(db, mockPool, user, estimate, 12350);
   });
 
   it('deletes fill auction for other fill auction event', async () => {
@@ -608,7 +611,7 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: mockedPool.id,
+        contractId: mockPool.id,
         contractType: BlendContractType.Pool,
         ledger: 12350,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
@@ -636,7 +639,7 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: mockedPool.id,
+        contractId: mockPool.id,
         contractType: BlendContractType.Pool,
         ledger: 12350,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
@@ -670,7 +673,7 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: mockedPool.id,
+        contractId: mockPool.id,
         contractType: BlendContractType.Pool,
         ledger: 12345,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
@@ -698,7 +701,7 @@ describe('poolEventHandler', () => {
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
-        contractId: mockedPool.id,
+        contractId: mockPool.id,
         contractType: BlendContractType.Pool,
         ledger: 12345,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
