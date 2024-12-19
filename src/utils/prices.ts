@@ -1,5 +1,6 @@
-import { APP_CONFIG } from './config.js';
+import { APP_CONFIG, DexPriceSource, ExchangePriceSource } from './config.js';
 import { AuctioneerDatabase, PriceEntry } from './db.js';
+import { HorizonHelper } from './horizon_helper.js';
 import { stringify } from './json.js';
 import { logger } from './logger.js';
 
@@ -13,9 +14,80 @@ interface ExchangePrice {
  * @param db - The database to set prices in
  */
 export async function setPrices(db: AuctioneerDatabase): Promise<void> {
+  const exchangePrices: ExchangePriceSource[] = [];
+  const dexPrices: DexPriceSource[] = [];
+
+  for (const source of APP_CONFIG.priceSources ?? []) {
+    switch (source.type) {
+      case 'binance':
+      case 'coinbase':
+        exchangePrices.push(source as ExchangePriceSource);
+        break;
+      case 'dex':
+        dexPrices.push(source as DexPriceSource);
+        break;
+    }
+  }
+
+  const [exchangePricesResult, dexPricesResult] = await Promise.all([
+    getExchangePrices(exchangePrices),
+    getDexPrices(dexPrices),
+  ]);
+
+  const priceEntries = exchangePricesResult.concat(dexPricesResult);
+  if (priceEntries.length !== 0) {
+    db.setPriceEntries(exchangePricesResult.concat(dexPricesResult));
+    logger.info(`Set ${priceEntries.length} prices in the database.`);
+  } else {
+    logger.info('No prices set.');
+  }
+}
+
+/**
+ * Fetch prices via path payments on the Stellar DEX.
+ * @param priceSources - The DEX price sources to fetch prices for
+ * @returns An array of price entries. If a price cannot be fetched, it is not included in the array.
+ */
+export async function getDexPrices(priceSources: DexPriceSource[]): Promise<PriceEntry[]> {
+  // process DEX prices one at a time to avoid strict Horizon rate limits on the public
+  // Horizon instance
+  const priceEntries: PriceEntry[] = [];
+  const timestamp = Math.floor(Date.now() / 1000);
+  const horizonHelper = new HorizonHelper();
+  for (const priceSource of priceSources) {
+    try {
+      const price = await horizonHelper.loadStrictReceivePrice(
+        priceSource.sourceAsset,
+        priceSource.destAsset,
+        priceSource.destAmount
+      );
+
+      priceEntries.push({
+        asset_id: priceSource.assetId,
+        price: price,
+        timestamp: timestamp,
+      });
+    } catch (e) {
+      logger.error(`Error fetching dex price for ${priceSource}: ${e}`);
+      continue;
+    }
+  }
+  return priceEntries;
+}
+
+/**
+ * Fetch exchange prices.
+ * @param exchangePriceSources - The exchange price sources to fetch prices for
+ * @returns An array of price entries. If a price cannot be fetched, it is not included in the array.
+ */
+export async function getExchangePrices(
+  exchangePriceSources: ExchangePriceSource[]
+): Promise<PriceEntry[]> {
+  const timestamp = Math.floor(Date.now() / 1000);
+
   const coinbaseSymbols: string[] = [];
   const binanceSymbols: string[] = [];
-  for (const source of APP_CONFIG.priceSources ?? []) {
+  for (const source of exchangePriceSources) {
     if (source.type === 'coinbase') {
       coinbaseSymbols.push(source.symbol);
     } else if (source.type === 'binance') {
@@ -23,17 +95,16 @@ export async function setPrices(db: AuctioneerDatabase): Promise<void> {
     }
   }
 
-  const timestamp = Math.floor(Date.now() / 1000);
+  // If these API calls fail, it is assumed the functions return an empty array
   const [coinbasePricesResult, binancePricesResult] = await Promise.all([
     coinbasePrices(coinbaseSymbols),
     binancePrices(binanceSymbols),
   ]);
   const exchangePriceResult = coinbasePricesResult.concat(binancePricesResult);
 
-  const priceSources = APP_CONFIG.priceSources ?? [];
   const priceEntries: PriceEntry[] = [];
   for (const price of exchangePriceResult) {
-    const assetId = priceSources.find((source) => source.symbol === price.symbol)?.assetId;
+    const assetId = exchangePriceSources.find((source) => source.symbol === price.symbol)?.assetId;
     if (assetId) {
       priceEntries.push({
         asset_id: assetId,
@@ -42,7 +113,7 @@ export async function setPrices(db: AuctioneerDatabase): Promise<void> {
       });
     }
   }
-  db.setPriceEntries(priceEntries);
+  return priceEntries;
 }
 
 /**
