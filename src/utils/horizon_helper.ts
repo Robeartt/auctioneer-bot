@@ -1,12 +1,6 @@
-import { PoolUser, PositionsEstimate } from '@blend-capital/blend-sdk';
 import { Asset, Horizon } from '@stellar/stellar-sdk';
 import { APP_CONFIG } from './config.js';
 import { logger } from './logger.js';
-
-export interface PoolUserEst {
-  estimate: PositionsEstimate;
-  user: PoolUser;
-}
 
 export class HorizonHelper {
   url: string;

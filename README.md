@@ -27,7 +27,7 @@ docker run --restart always -d -v /path/on/host:/app/data script3/auctioneer-bot
 
 The auctioneer bot requires access to a Soroban RPC server, and is fairly chatty. We recommend running an Soroban RPC server on the same host to avoid issues with rate limiting / usage. Please see the Stellar documentation for running a [Soroban RPC](https://developers.stellar.org/docs/data/rpc). We recommend running the [Soroban RPC as a docker container](https://developers.stellar.org/docs/data/rpc/admin-guide#docker-image). The Auctioneer bot itself is not very resource intensive, and should work fine alongside an RPC with the suggested hardware requirements for the Soroban RPC server.
 
-The auctioneer bot also (optionally) uses Horizon to fetch prices from the DEX. If you use this, the bot keeps requests fairly quite (up to 1 request a minute per asset), so using a public Horizon endpoint sgould be OK. However, it is recommended to use a Horizon hosting solution to ensure uptime (e.g. Blockdaemon or Quicknode).
+The auctioneer bot also (optionally) uses Horizon to fetch prices from the DEX. If you use this, the bot keeps usage low (up to 1 request a minute per asset), so using a public Horizon endpoint should be OK. However, it is recommended to use a Horizon hosting solution to ensure uptime (e.g. Blockdaemon or Quicknode).
 
 Auctions filled by the bot will have an entry populated in the `filled_auctions` table of the DB, with the bots estimated profit on the trade included.
 
