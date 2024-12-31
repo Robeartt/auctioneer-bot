@@ -14,11 +14,30 @@ export interface Filler {
   supportedLot: string[];
 }
 
-export interface PriceSource {
+export enum PriceSourceType {
+  BINANCE = 'binance',
+  COINBASE = 'coinbase',
+  DEX = 'dex',
+}
+
+export interface PriceSourceBase {
   assetId: string;
-  type: 'coinbase' | 'binance';
+  type: PriceSourceType;
+}
+
+export interface ExchangePriceSource extends PriceSourceBase {
+  type: PriceSourceType.BINANCE | PriceSourceType.COINBASE;
   symbol: string;
 }
+
+export interface DexPriceSource extends PriceSourceBase {
+  type: PriceSourceType.DEX;
+  sourceAsset: string;
+  destAsset: string;
+  destAmount: string;
+}
+
+export type PriceSource = ExchangePriceSource | DexPriceSource;
 
 export interface AuctionProfit {
   profitPct: number;
@@ -37,6 +56,7 @@ export interface AppConfig {
   blndAddress: string;
   keypair: Keypair;
   fillers: Filler[];
+  horizonURL: string | undefined;
   priceSources: PriceSource[] | undefined;
   profits: AuctionProfit[] | undefined;
   slackWebhook: string | undefined;
@@ -68,6 +88,7 @@ export function validateAppConfig(config: any): boolean {
     typeof config.blndAddress !== 'string' ||
     typeof config.keypair !== 'string' ||
     !Array.isArray(config.fillers) ||
+    (config.horizonURL !== undefined && typeof config.horizonURL !== 'string') ||
     (config.priceSources !== undefined && !Array.isArray(config.priceSources)) ||
     (config.profits !== undefined && !Array.isArray(config.profits)) ||
     (config.slackWebhook !== undefined && typeof config.slackWebhook !== 'string')
@@ -112,17 +133,38 @@ export function validateFiller(filler: any): boolean {
 }
 
 export function validatePriceSource(priceSource: any): boolean {
-  if (typeof priceSource !== 'object' || priceSource === null) {
+  if (
+    typeof priceSource !== 'object' ||
+    priceSource === null ||
+    priceSource.type === undefined ||
+    typeof priceSource.assetId !== 'string'
+  ) {
     return false;
   }
 
-  if (
-    typeof priceSource.assetId === 'string' &&
-    (priceSource.type === 'binance' || priceSource.type === 'coinbase') &&
-    typeof priceSource.symbol === 'string'
-  ) {
-    return true;
+  switch (priceSource.type) {
+    case PriceSourceType.BINANCE:
+    case PriceSourceType.COINBASE:
+      if (typeof priceSource.symbol === 'string') {
+        return true;
+      }
+      break;
+    case PriceSourceType.DEX:
+      if (
+        typeof priceSource.sourceAsset === 'string' &&
+        priceSource.sourceAsset.includes(':') &&
+        typeof priceSource.destAsset === 'string' &&
+        priceSource.destAsset.includes(':') &&
+        typeof priceSource.destAmount === 'string'
+      ) {
+        return true;
+      }
+      break;
+    default:
+      console.log('Invalid price source (unkown type)', priceSource);
+      return false;
   }
+
   console.log('Invalid price source', priceSource);
   return false;
 }

@@ -27,6 +27,8 @@ docker run --restart always -d -v /path/on/host:/app/data script3/auctioneer-bot
 
 The auctioneer bot requires access to a Soroban RPC server, and is fairly chatty. We recommend running an Soroban RPC server on the same host to avoid issues with rate limiting / usage. Please see the Stellar documentation for running a [Soroban RPC](https://developers.stellar.org/docs/data/rpc). We recommend running the [Soroban RPC as a docker container](https://developers.stellar.org/docs/data/rpc/admin-guide#docker-image). The Auctioneer bot itself is not very resource intensive, and should work fine alongside an RPC with the suggested hardware requirements for the Soroban RPC server.
 
+The auctioneer bot also (optionally) uses Horizon to fetch prices from the DEX. If you use this, the bot keeps usage low (up to 1 request a minute per asset), so using a public Horizon endpoint should be OK. However, it is recommended to use a Horizon hosting solution to ensure uptime (e.g. Blockdaemon or Quicknode).
+
 Auctions filled by the bot will have an entry populated in the `filled_auctions` table of the DB, with the bots estimated profit on the trade included.
 
 ## Important Info
@@ -77,17 +79,33 @@ The `fillers` array contains configurations for individual filler accounts. The 
 
 The `priceSources` array defines the additional sources for price data. If an asset has a price source, the oracle prices will not be used when calculating profit, and instead the price fetched from the price source will be. 
 
+##### Exchange Price Sources
+
 Prices are fetched from the following endpoints:
 * Coinbase: https://api.coinbase.com/api/v3/brokerage/market/products?product_ids=SYMBOL
 * Binance: https://api.binance.com/api/v3/ticker/price?symbols=[SYMBOL]
 
-Each price source has the following fields:
+Each exchange price source has the following fields:
 
 | Field | Description |
 |-------|-------------|
 | `assetId` | The address of the asset for which this price source provides data. |
 | `type` | The type of price source (e.g., "coinbase", "binance"). |
 | `symbol` | The trading symbol used by the price source for this asset. |
+
+##### DEX Prices Sources
+
+DEX prices sources are calculated via Horizon's "find strict receive payment path" endpoint. The specified `destAmount` will be received via the `sourceAsset` asset, and the price will be computed such that `sourceAmount / destAmount`, or the average price for the full path payment operation on that block. This can be useful to fetch prices for assets that are not on centralized exchanges.
+
+Each DEX price source has the following fields:
+
+| Field | Description |
+|-------|-------------|
+| `assetId` | The address of the asset for which this price source provides data. |
+| `type` | The type of price source (e.g., "dex"). |
+| `sourceAsset` | The Stellar Asset being used as the source asset. Should align with the contract address in `assetId`. The string is formatted as `code:issuer` or `XLM:native`. |
+| `destAsset` | The Stellar Asset being used as the destination asset. This should be what the oracle is reporting in (e.g. USDC). The string is formatted as `code:issuer` or `XLM:native`.
+| `destAmount` | The amount of `destAsset` that must be received to calculate the final price of `sourceAsset` |
 
 #### Profits
 
