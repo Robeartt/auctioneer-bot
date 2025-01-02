@@ -466,6 +466,52 @@ describe('filler', () => {
       expect(requests).toEqual(expectedRequests);
     });
 
+    it('does not withdraw primary collateral if it only slightly above min collateral', () => {
+      const positions = new Positions(
+        // dTokens
+        new Map<number, bigint>([]),
+        // bTokens - (1.007 is ~b_rate)
+        new Map<number, bigint>([
+          [1, FixedMath.toFixed(100.8 / 1.007, 7)],
+        ]),
+        new Map<number, bigint>([])
+      );
+      const balances = new Map<string, bigint>([
+        [assets[0], FixedMath.toFixed(575, 7)],
+        [assets[1], FixedMath.toFixed(3000, 7)],
+        [assets[2], FixedMath.toFixed(1000, 7)],
+        [assets[3], FixedMath.toFixed(0, 7)],
+      ]);
+
+      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
+
+      const expectedRequests: Request[] = [];
+      expect(requests).toEqual(expectedRequests);
+    });
+
+    it('does nothing when only primary collateral and other non-repayable liability remain', () => {
+      const positions = new Positions(
+        // dTokens
+        new Map<number, bigint>([[0, FixedMath.toFixed(200, 7)]]),
+        // bTokens
+        new Map<number, bigint>([
+          [1, FixedMath.toFixed(150, 7)],
+        ]),
+        new Map<number, bigint>([])
+      );
+      const balances = new Map<string, bigint>([
+        [assets[0], FixedMath.toFixed(0, 7)],
+        [assets[1], FixedMath.toFixed(3000, 7)],
+        [assets[2], FixedMath.toFixed(1000, 7)],
+        [assets[3], FixedMath.toFixed(0, 7)],
+      ]);
+
+      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
+
+      const expectedRequests: Request[] = [];
+      expect(requests).toEqual(expectedRequests);
+    });
+
     it('clears smallest collateral position first', () => {
       const positions = new Positions(
         // dTokens
