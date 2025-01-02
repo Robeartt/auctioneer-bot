@@ -15,6 +15,8 @@ import { stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
 import { SorobanHelper } from './utils/soroban_helper.js';
 
+const MAX_WITHDRAW = BigInt('9223372036854775807');
+
 /**
  * Check if the filler supports bidding on the auction.
  * @param filler - The filler to check
@@ -197,7 +199,7 @@ export function managePositions(
     let withdrawAmount: bigint;
     if (hasLeftoverLiabilities.length === 0) {
       // no liabilities, withdraw the full position
-      withdrawAmount = BigInt('9223372036854775807');
+      withdrawAmount = MAX_WITHDRAW;
     } else {
       if (filler.minHealthFactor * 1.005 > effectiveCollateral / effectiveLiabilities) {
         // stop withdrawing collateral if close to min health factor
@@ -208,13 +210,13 @@ export function managePositions(
         (reserve.getCollateralFactor() * price);
       const position = reserve.toAssetFromBTokenFloat(amount);
       withdrawAmount =
-        maxWithdraw > position ? BigInt('9223372036854775807') : FixedMath.toFixed(maxWithdraw, 7);
+        maxWithdraw > position ? MAX_WITHDRAW : FixedMath.toFixed(maxWithdraw, 7);
     }
 
     // if this is not a full withdrawal, and the colleratal is not also a liability, stop
     if (
       !hasLeftoverLiabilities.includes(reserve.config.index) &&
-      withdrawAmount !== BigInt('9223372036854775807')
+      withdrawAmount !== MAX_WITHDRAW
     ) {
       break;
     }
@@ -222,6 +224,11 @@ export function managePositions(
     if (reserve.assetId === filler.primaryAsset) {
       const toMinPosition = reserve.toAssetFromBToken(amount) - filler.minPrimaryCollateral;
       withdrawAmount = withdrawAmount > toMinPosition ? toMinPosition : withdrawAmount;
+      // if withdrawAmount is less than 1% of the minPrimaryCollateral stop
+      // this prevents dust withdraws from looping unwind events due to interest accrual
+      if (withdrawAmount < filler.minPrimaryCollateral / 100n) {
+        break;
+      }
     }
 
     if (withdrawAmount > 0n) {
