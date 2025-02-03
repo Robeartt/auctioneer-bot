@@ -43,6 +43,7 @@ export abstract class SubmissionQueue<T> {
       minRetryTimeout: minRetryTimeout,
       submission: submission,
     };
+    logger.info(`Adding submission to queue: ${stringify(submission)}`);
     this.submissions.push(retrieableSubmission);
     if (!this.processing) {
       this.processQueue();
@@ -52,7 +53,7 @@ export abstract class SubmissionQueue<T> {
   private retrySubmission(submission: Retriable<T>): void {
     if (submission.retries > 0) {
       submission.retries--;
-      logger.warn(`Retrying submission, ${submission.retries} retries remaining.`);
+      logger.warn(`Retrying submission, ${submission.retries} retries remaining. ${stringify(submission.submission)}`);
       this.submissions.push(submission);
     } else {
       logger.error(
@@ -66,13 +67,16 @@ export abstract class SubmissionQueue<T> {
    * Process the submission queue in FIFO order.
    */
   async processQueue() {
+    logger.info(`Processing queue with ${this.submissions.length} submissions.`);
     if (this.processing || this.submissions.length === 0) {
+      logger.info(`Queue is already processing or empty, stopping this task.`);
       return;
     }
     this.processing = true;
 
     while (this.submissions.length > 0) {
       let retrieableSubmission = this.submissions[0];
+      logger.info(`Processing submission: ${stringify(retrieableSubmission.submission)}`);
       let time_now = Date.now();
       let startTime = retrieableSubmission.timestamp + retrieableSubmission.minRetryTimeout;
       if (time_now < startTime) {

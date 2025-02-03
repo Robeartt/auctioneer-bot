@@ -27,12 +27,14 @@ export function canFillerBid(filler: Filler, auctionData: AuctionData): boolean 
   // validate lot
   for (const [assetId, _] of auctionData.lot) {
     if (!filler.supportedLot.some((address) => assetId === address)) {
+      logger.info("Filler doesn't support lot asset: " + assetId);
       return false;
     }
   }
   // validate bid
   for (const [assetId, _] of auctionData.bid) {
     if (!filler.supportedBid.some((address) => assetId === address)) {
+      logger.info("Filler doesn't support bid asset: " + assetId);
       return false;
     }
   }
