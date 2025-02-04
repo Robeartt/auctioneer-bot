@@ -240,7 +240,7 @@ export class SorobanHelper {
       .addOperation(xdr.Operation.fromXDR(operation, 'base64'))
       .build();
 
-    logger.info(`Attempting to simulate and submit transaction: ${tx.toXDR()}`);
+    logger.info(`Attempting to simulate and submit transaction ${tx.hash().toString("hex")}: ${tx.toXDR()}`);
     let simResult = await stellarRpc.simulateTransaction(tx);
 
     if (rpc.Api.isSimulationRestore(simResult)) {
@@ -281,6 +281,8 @@ export class SorobanHelper {
   private async sendTransaction(
     transaction: Transaction
   ): Promise<rpc.Api.GetSuccessfulTransactionResponse & { txHash: string }> {
+    logger.info(`Submitting transaction: ${transaction.hash().toString("hex")}`);
+    let submitStartTime = Date.now();
     const stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
     let txResponse = await stellarRpc.sendTransaction(transaction);
     if (txResponse.status === 'TRY_AGAIN_LATER') {
@@ -296,9 +298,14 @@ export class SorobanHelper {
       throw error;
     }
     let get_tx_response = await stellarRpc.getTransaction(txResponse.hash);
-    while (get_tx_response.status === 'NOT_FOUND') {
-      await new Promise((resolve) => setTimeout(resolve, 250));
+    while (get_tx_response.status === 'NOT_FOUND' && Date.now() - submitStartTime < 6000) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
       get_tx_response = await stellarRpc.getTransaction(txResponse.hash);
+    }
+
+    if (get_tx_response.status === 'NOT_FOUND') {
+      logger.error(`Transaction not found: ${txResponse.hash}`);
+      throw new Error('Transaction not found');
     }
 
     if (get_tx_response.status !== 'SUCCESS') {

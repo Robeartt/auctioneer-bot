@@ -58,6 +58,7 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
     userLiquidation: UserLiquidation
   ): Promise<boolean> {
     try {
+      logger.info(`Creating liquidation for user: ${userLiquidation.user}`);
       const pool = new PoolContract(APP_CONFIG.poolAddress);
       let op = pool.newLiquidationAuction({
         user: userLiquidation.user,
@@ -71,7 +72,7 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
         return true;
       }
       await sorobanHelper.submitTransaction(op, APP_CONFIG.keypair);
-      const logMessage = `Successfully submitted liquidation for user: ${userLiquidation.user} Liquidation Percent: ${userLiquidation.liquidationPercent}`;
+      const logMessage = `Successfully created liquidation for user: ${userLiquidation.user} Liquidation Percent: ${userLiquidation.liquidationPercent}`;
       logger.info(logMessage);
       await sendSlackNotification(logMessage);
       return true;
@@ -108,10 +109,11 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
     badDebtTransfer: BadDebtTransfer
   ): Promise<boolean> {
     try {
+      logger.info(`Transferring bad debt to backstop for user: ${badDebtTransfer.user}`);
       const pool = new PoolContract(APP_CONFIG.poolAddress);
       let op = pool.badDebt(badDebtTransfer.user);
       await sorobanHelper.submitTransaction(op, APP_CONFIG.keypair);
-      const logMessage = `Successfully submitted bad debt transfer for user: ${badDebtTransfer.user}`;
+      const logMessage = `Successfully transferred bad debt to backstop for user: ${badDebtTransfer.user}`;
       await sendSlackNotification(logMessage);
       logger.info(logMessage);
       return true;
@@ -127,6 +129,7 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
 
   async submitBadDebtAuction(sorobanHelper: SorobanHelper): Promise<boolean> {
     try {
+      logger.info(`Creating bad debt auction`);
       const pool = new PoolContract(APP_CONFIG.poolAddress);
       let op = pool.newBadDebtAuction();
       const auctionExists =
@@ -137,7 +140,7 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
         return true;
       }
       await sorobanHelper.submitTransaction(op, APP_CONFIG.keypair);
-      const logMessage = `Successfully submitted bad debt auction`;
+      const logMessage = `Successfully created bad debt auction`;
       logger.info(logMessage);
       await sendSlackNotification(logMessage);
       return true;

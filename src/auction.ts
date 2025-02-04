@@ -156,7 +156,7 @@ export async function calculateBlockFillAndPercent(
       const loopFillerBalances = new Map(fillerBalances);
       requests = [];
       logger.info(
-        `Calculating auction fill iteration ${iterations} with delay ${fillBlockDelay} and percent ${fillPercent}`
+        `Calculating auction fill iteration ${iterations} with delay ${fillBlockDelay} and percent ${fillPercent} and user ${auction.user}`
       );
       const [loopScaledAuction] = auction.scale(auction.data.block + fillBlockDelay, fillPercent);
       iterations++;

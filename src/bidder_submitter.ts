@@ -135,6 +135,13 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         await sendSlackNotification(logMessage);
         logger.info(logMessage);
         return true;
+      } else {
+        logger.info(
+          `Fill ledger not reached for auction bid\n` +
+          `Type: ${auctionBid.auctionEntry.auction_type}\n` +
+          `User: ${auctionBid.auctionEntry.user_id}\n` +
+          `Fill Ledger: ${fill.block}, Next Ledger: ${nextLedger}`
+        );
       }
       // allow bidder handler to re-process the auction entry
       return true;
