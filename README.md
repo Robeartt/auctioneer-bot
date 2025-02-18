@@ -55,6 +55,7 @@ For an example config file that is configured to interact with [Blend v1 mainnet
 | `blndAddress` | The address of the BLND token contract. |
 | `keypair` | The secret key for the bot's auction creating account. This should be different from the fillers as auction creation and auction bidding can happen simultaneously. **Keep this secret and secure!** |
 | `fillers` | A list of accounts that will bid and fill on auctions. |
+| `version` | The version of the protocol to interact with. Possible values are `V1` or `V2`. |
 | `priceSources` | (Optional) A list of assets that will have prices sourced from exchanges instead of the pool oracle. |
 | `profits` | (Optional) A list of auction profits to define different profit percentages used for matching auctions.
 | `slackWebhook` | (Optional) A slack webhook URL to post updates to (https://hooks.slack.com/services/). Leave undefined if no webhooks are required. |
