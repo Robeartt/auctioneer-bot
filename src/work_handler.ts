@@ -49,10 +49,13 @@ export class WorkHandler {
       } catch (error) {
         retries++;
         if (retries >= MAX_RETRIES) {
+          if (appEvent.type === EventType.INIT) {
+            throw error;
+          }
           await deadletterEvent(appEvent);
           return false;
         }
-        logger.warn(`Error processing event.`, error);
+        logger.warn(`Error processing ${appEvent.type}.`, error);
         logger.warn(
           `Retry ${retries + 1}/${MAX_RETRIES}. Waiting ${RETRY_DELAY}ms before next attempt.`
         );
@@ -72,6 +75,16 @@ export class WorkHandler {
    */
   async processEvent(appEvent: AppEvent): Promise<void> {
     switch (appEvent.type) {
+      case EventType.INIT: {
+        try {
+          await this.sorobanHelper.loadPool();
+        } catch (error) {
+          throw new Error(
+            `Failed to load pool please check that pool id and version are correct. Error: ${error}`
+          );
+        }
+        break;
+      }
       case EventType.PRICE_UPDATE: {
         await setPrices(this.db);
         break;

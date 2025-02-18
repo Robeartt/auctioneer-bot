@@ -1,6 +1,7 @@
 import { PoolEvent } from '@blend-capital/blend-sdk';
 
 export enum EventType {
+  INIT = 'init',
   LEDGER = 'ledger',
   PRICE_UPDATE = 'price_update',
   ORACLE_SCAN = 'oracle_scan',
@@ -13,6 +14,7 @@ export enum EventType {
 // ********* Shared **********
 
 export type AppEvent =
+  | InitEvent
   | LedgerEvent
   | PriceUpdateEvent
   | OracleScanEvent
@@ -46,6 +48,10 @@ export interface PoolEventEvent extends BaseEvent {
 }
 
 // ********** Work Queue Only **********
+
+export interface InitEvent extends BaseEvent {
+  type: EventType.INIT;
+}
 
 /**
  * Event to update the stored price of all pool assets.

@@ -1,3 +1,4 @@
+import { EventType } from './events.js';
 import { OracleHistory } from './oracle_history.js';
 import { AuctioneerDatabase } from './utils/db.js';
 import { logger } from './utils/logger.js';
@@ -26,6 +27,10 @@ async function main() {
           `Finished: ${message?.data} in ${Date.now() - timer}ms with delay ${timer - appEvent.timestamp}ms`
         );
       } catch (err) {
+        if (appEvent.type === EventType.INIT) {
+          logger.error(err);
+          throw err;
+        }
         logger.error(`Unexpected error in worker for ${message?.data}`, err);
         await deadletterEvent(appEvent);
       }

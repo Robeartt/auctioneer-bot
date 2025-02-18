@@ -1,7 +1,13 @@
 import { rpc } from '@stellar/stellar-sdk';
 import { fork } from 'child_process';
 import { runCollector } from './collector.js';
-import { EventType, OracleScanEvent, PriceUpdateEvent, UserRefreshEvent } from './events.js';
+import {
+  EventType,
+  InitEvent,
+  OracleScanEvent,
+  PriceUpdateEvent,
+  UserRefreshEvent,
+} from './events.js';
 import { PoolEventHandler } from './pool_event_handler.js';
 import { APP_CONFIG } from './utils/config.js';
 import { AuctioneerDatabase } from './utils/db.js';
@@ -74,12 +80,19 @@ async function main() {
 
   console.log('Auctioneer started successfully.');
 
+  // check pool loading on startup
+  const initEvent: InitEvent = {
+    type: EventType.INIT,
+    timestamp: Date.now(),
+  };
+  sendEvent(worker, initEvent);
+
   // update price on startup
-  const priveEvent: PriceUpdateEvent = {
+  const priceEvent: PriceUpdateEvent = {
     type: EventType.PRICE_UPDATE,
     timestamp: Date.now(),
   };
-  sendEvent(worker, priveEvent);
+  sendEvent(worker, priceEvent);
   // update price on startup
   const oracleEvent: OracleScanEvent = {
     type: EventType.ORACLE_SCAN,
