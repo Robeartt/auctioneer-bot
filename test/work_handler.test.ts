@@ -68,7 +68,13 @@ describe('WorkHandler', () => {
       },
     ];
     const liquidations: WorkSubmission[] = [
-      { user: 'user1', type: WorkSubmissionType.LiquidateUser, liquidationPercent: 10n },
+      {
+        user: 'user1',
+        type: WorkSubmissionType.LiquidateUser,
+        liquidationPercent: 10n,
+        lot: ['asset2'],
+        bid: ['asset1'],
+      },
     ];
     sorobanHelper.loadPoolOracle.mockResolvedValue(poolOracle);
     oracleHistory.getSignificantPriceChanges.mockReturnValue(priceChanges);

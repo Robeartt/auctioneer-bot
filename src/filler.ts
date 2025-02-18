@@ -120,7 +120,7 @@ export function managePositions(
   const hasLeftoverLiabilities: number[] = [];
   // attempt to repay any liabilities the filler has
   for (const [assetIndex, amount] of positions.liabilities) {
-    const reserve = pool.reserves.get(pool.config.reserveList[assetIndex]);
+    const reserve = pool.reserves.get(pool.metadata.reserveList[assetIndex]);
     // this should never happen
     if (reserve === undefined) {
       logger.error(
@@ -167,7 +167,7 @@ export function managePositions(
   const collateralList: { reserve: Reserve; price: number; amount: bigint; size: number }[] = [];
 
   for (const [assetIndex, amount] of positions.collateral) {
-    const reserve = pool.reserves.get(pool.config.reserveList[assetIndex]);
+    const reserve = pool.reserves.get(pool.metadata.reserveList[assetIndex]);
     // this should never happen
     if (reserve === undefined) {
       logger.error(
@@ -211,15 +211,11 @@ export function managePositions(
         (effectiveCollateral - effectiveLiabilities * filler.minHealthFactor) /
         (reserve.getCollateralFactor() * price);
       const position = reserve.toAssetFromBTokenFloat(amount);
-      withdrawAmount =
-        maxWithdraw > position ? MAX_WITHDRAW : FixedMath.toFixed(maxWithdraw, 7);
+      withdrawAmount = maxWithdraw > position ? MAX_WITHDRAW : FixedMath.toFixed(maxWithdraw, 7);
     }
 
     // if this is not a full withdrawal, and the colleratal is not also a liability, stop
-    if (
-      !hasLeftoverLiabilities.includes(reserve.config.index) &&
-      withdrawAmount !== MAX_WITHDRAW
-    ) {
+    if (!hasLeftoverLiabilities.includes(reserve.config.index) && withdrawAmount !== MAX_WITHDRAW) {
       break;
     }
     // require the filler to keep at least the min collateral balance of their primary asset

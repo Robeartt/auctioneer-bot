@@ -1,6 +1,7 @@
 import { Keypair } from '@stellar/stellar-sdk';
 import { readFileSync } from 'fs';
 import { parse } from './json.js';
+import { Version } from '@blend-capital/blend-sdk';
 
 export interface Filler {
   name: string;
@@ -56,6 +57,7 @@ export interface AppConfig {
   blndAddress: string;
   keypair: Keypair;
   fillers: Filler[];
+  version: Version;
   horizonURL: string | undefined;
   priceSources: PriceSource[] | undefined;
   profits: AuctionProfit[] | undefined;
@@ -87,6 +89,7 @@ export function validateAppConfig(config: any): boolean {
     typeof config.usdcAddress !== 'string' ||
     typeof config.blndAddress !== 'string' ||
     typeof config.keypair !== 'string' ||
+    !validateVersion(config.version) ||
     !Array.isArray(config.fillers) ||
     (config.horizonURL !== undefined && typeof config.horizonURL !== 'string') ||
     (config.priceSources !== undefined && !Array.isArray(config.priceSources)) ||
@@ -186,4 +189,11 @@ export function validateAuctionProfit(profits: any): boolean {
 
   console.log('Invalid profit', profits);
   return false;
+}
+
+export function validateVersion(version: any): boolean {
+  if (typeof version !== 'string') {
+    return false;
+  }
+  return version === Version.V1 || version === Version.V2;
 }

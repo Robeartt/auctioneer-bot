@@ -5,7 +5,9 @@ import {
   validateAuctionProfit,
   validateFiller,
   validatePriceSource,
+  validateVersion,
 } from '../../src/utils/config';
+import { version } from 'winston';
 
 describe('validateAppConfig', () => {
   it('should return false for non-object config', () => {
@@ -26,6 +28,7 @@ describe('validateAppConfig', () => {
       keypair: 'secret',
       fillers: [],
       priceSources: [],
+      version: 'V1',
       slackWebhook: 123, // Invalid type
     };
     expect(validateAppConfig(invalidConfig)).toBe(false);
@@ -42,6 +45,7 @@ describe('validateAppConfig', () => {
       usdcAddress: 'usdc',
       blndAddress: 'blnd',
       keypair: Keypair.random().secret(),
+      version: 'V1',
       fillers: [
         {
           name: 'filler',
@@ -169,5 +173,21 @@ describe('validateAuctionProfit', () => {
       supportedLot: ['asset2'],
     };
     expect(validateAuctionProfit(validProfits)).toBe(true);
+  });
+});
+
+describe('validateVersion', () => {
+  it('should return false for non-string version', () => {
+    expect(validateVersion(null)).toBe(false);
+    expect(validateVersion(123)).toBe(false);
+  });
+
+  it('should return false for invalid version', () => {
+    expect(validateVersion('invalidVersion')).toBe(false);
+  });
+
+  it('should return true for valid version', () => {
+    expect(validateVersion('V1')).toBe(true);
+    expect(validateVersion('V2')).toBe(true);
   });
 });

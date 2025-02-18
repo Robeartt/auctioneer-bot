@@ -7,9 +7,13 @@ import {
   parseError,
   Pool,
   PoolContract,
+  PoolContractV1,
   PoolOracle,
   PoolUser,
+  PoolV1,
+  PoolV2,
   PositionsEstimate,
+  Version,
 } from '@blend-capital/blend-sdk';
 import {
   Account,
@@ -64,7 +68,11 @@ export class SorobanHelper {
     if (this.pool_cache) {
       return this.pool_cache;
     } else {
-      this.pool_cache = await Pool.load(this.network, APP_CONFIG.poolAddress);
+      if (APP_CONFIG.version === Version.V1) {
+        this.pool_cache = await PoolV1.load(this.network, APP_CONFIG.poolAddress);
+      } else {
+        this.pool_cache = await PoolV2.load(this.network, APP_CONFIG.poolAddress);
+      }
       return this.pool_cache;
     }
   }
@@ -240,7 +248,9 @@ export class SorobanHelper {
       .addOperation(xdr.Operation.fromXDR(operation, 'base64'))
       .build();
 
-    logger.info(`Attempting to simulate and submit transaction ${tx.hash().toString("hex")}: ${tx.toXDR()}`);
+    logger.info(
+      `Attempting to simulate and submit transaction ${tx.hash().toString('hex')}: ${tx.toXDR()}`
+    );
     let simResult = await stellarRpc.simulateTransaction(tx);
 
     if (rpc.Api.isSimulationRestore(simResult)) {
@@ -281,7 +291,7 @@ export class SorobanHelper {
   private async sendTransaction(
     transaction: Transaction
   ): Promise<rpc.Api.GetSuccessfulTransactionResponse & { txHash: string }> {
-    logger.info(`Submitting transaction: ${transaction.hash().toString("hex")}`);
+    logger.info(`Submitting transaction: ${transaction.hash().toString('hex')}`);
     let submitStartTime = Date.now();
     const stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
     let txResponse = await stellarRpc.sendTransaction(transaction);

@@ -11,7 +11,7 @@ import { APP_CONFIG } from '../src/utils/config.js';
 import { AuctioneerDatabase } from '../src/utils/db.js';
 import { PoolUserEst, SorobanHelper } from '../src/utils/soroban_helper.js';
 import { WorkSubmissionType } from '../src/work_submitter.js';
-import { inMemoryAuctioneerDb, mockPool } from './helpers/mocks.js';
+import { inMemoryAuctioneerDb, mockPool, USDC, USDC_ID, XLM, XLM_ID } from './helpers/mocks.js';
 
 jest.mock('../src/utils/soroban_helper.js');
 jest.mock('../src/utils/logger.js', () => ({
@@ -274,6 +274,11 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
     mockedSorobanHelper.loadPool.mockResolvedValue(mockPool);
     mockBackstopPositionsEstimate.totalEffectiveLiabilities = 1000;
     mockBackstopPositionsEstimate.totalEffectiveCollateral = 0;
+    mockBackstopPositions.positions = new Positions(
+      new Map([[USDC_ID, 2000n]]),
+      new Map([[XLM_ID, 3000n]]),
+      new Map()
+    );
     mockedSorobanHelper.loadUserPositionEstimate.mockResolvedValue({
       estimate: mockBackstopPositionsEstimate,
       user: mockBackstopPositions,
@@ -282,7 +287,13 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
 
     const result = await checkUsersForLiquidationsAndBadDebt(db, mockedSorobanHelper, user_ids);
 
-    expect(result).toEqual([{ type: WorkSubmissionType.BadDebtAuction }]);
+    expect(result).toEqual([
+      {
+        type: WorkSubmissionType.BadDebtAuction,
+        lot: [XLM],
+        bid: [USDC],
+      },
+    ]);
   });
 
   it('should handle liquidatable users correctly', async () => {
@@ -292,6 +303,11 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
     mockUserEstimate.totalEffectiveLiabilities = 1100;
     mockUserEstimate.totalBorrowed = 1500;
     mockUserEstimate.totalSupplied = 2000;
+    mockUser.positions = new Positions(
+      new Map([[USDC_ID, 2000n]]),
+      new Map([[XLM_ID, 3000n]]),
+      new Map()
+    );
     mockedSorobanHelper.loadUserPositionEstimate.mockResolvedValue({
       estimate: mockUserEstimate,
       user: mockUser,
@@ -302,7 +318,13 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
 
     expect(result.length).toBe(1);
     expect(result).toEqual([
-      { type: WorkSubmissionType.LiquidateUser, user: 'user1', liquidationPercent: 56n },
+      {
+        type: WorkSubmissionType.LiquidateUser,
+        user: 'user1',
+        liquidationPercent: 56n,
+        lot: [XLM],
+        bid: [USDC],
+      },
     ]);
   });
 

@@ -21,7 +21,7 @@ export function updateUser(
 ) {
   // TODO: Store latest ledger on Positions
   if (ledger === undefined) {
-    ledger = pool.config.latestLedger;
+    ledger = pool.metadata.latestLedger;
   }
 
   if (user === undefined || positionsEstimate === undefined) {
@@ -32,12 +32,12 @@ export function updateUser(
     // user has liabilities, update db entry
     let collateralAddress = new Map<string, bigint>();
     for (let [assetIndex, amount] of user.positions.collateral) {
-      const asset = pool.config.reserveList[assetIndex];
+      const asset = pool.metadata.reserveList[assetIndex];
       collateralAddress.set(asset, amount);
     }
     let liabilitiesAddress = new Map<string, bigint>();
     for (let [assetIndex, amount] of user.positions.liabilities) {
-      const asset = pool.config.reserveList[assetIndex];
+      const asset = pool.metadata.reserveList[assetIndex];
       liabilitiesAddress.set(asset, amount);
     }
     const new_entry: UserEntry = {

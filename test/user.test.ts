@@ -34,19 +34,19 @@ describe('updateUser', () => {
     expect(user_entry?.user_id).toEqual('GPUBKEY1');
     expect(user_entry?.health_factor).toEqual(2);
     expect(user_entry?.liabilities.size).toEqual(2);
-    expect(user_entry?.liabilities.get(mockPool.config.reserveList[0])).toEqual(BigInt(12345));
-    expect(user_entry?.liabilities.get(mockPool.config.reserveList[1])).toEqual(BigInt(54321));
+    expect(user_entry?.liabilities.get(mockPool.metadata.reserveList[0])).toEqual(BigInt(12345));
+    expect(user_entry?.liabilities.get(mockPool.metadata.reserveList[1])).toEqual(BigInt(54321));
     expect(user_entry?.collateral.size).toEqual(1);
-    expect(user_entry?.collateral.get(mockPool.config.reserveList[3])).toEqual(BigInt(789));
-    expect(user_entry?.updated).toEqual(mockPool.config.latestLedger);
+    expect(user_entry?.collateral.get(mockPool.metadata.reserveList[3])).toEqual(BigInt(789));
+    expect(user_entry?.updated).toEqual(mockPool.metadata.latestLedger);
   });
 
   it('deletes existing user without liabilities', async () => {
     let user_entry: UserEntry = {
       user_id: 'GPUBKEY1',
       health_factor: 2,
-      collateral: new Map([[mockPool.config.reserveList[3], BigInt(789)]]),
-      liabilities: new Map([[mockPool.config.reserveList[2], BigInt(789)]]),
+      collateral: new Map([[mockPool.metadata.reserveList[3], BigInt(789)]]),
+      liabilities: new Map([[mockPool.metadata.reserveList[2], BigInt(789)]]),
       updated: 123,
     };
     db.setUserEntry(user_entry);

@@ -1,4 +1,4 @@
-import { PoolContract } from '@blend-capital/blend-sdk';
+import { PoolContractV1, PoolContractV2, Version } from '@blend-capital/blend-sdk';
 import { rpc } from '@stellar/stellar-sdk';
 import { calculateAuctionFill } from './auction.js';
 import { getFillerAvailableBalances, managePositions } from './filler.js';
@@ -98,7 +98,10 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       );
 
       if (nextLedger >= fill.block) {
-        const pool = new PoolContract(APP_CONFIG.poolAddress);
+        const pool =
+          APP_CONFIG.version === Version.V2
+            ? new PoolContractV2(APP_CONFIG.poolAddress)
+            : new PoolContractV1(APP_CONFIG.poolAddress);
 
         const result = await sorobanHelper.submitTransaction(
           pool.submit({
@@ -138,9 +141,9 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       } else {
         logger.info(
           `Fill ledger not reached for auction bid\n` +
-          `Type: ${auctionBid.auctionEntry.auction_type}\n` +
-          `User: ${auctionBid.auctionEntry.user_id}\n` +
-          `Fill Ledger: ${fill.block}, Next Ledger: ${nextLedger}`
+            `Type: ${auctionBid.auctionEntry.auction_type}\n` +
+            `User: ${auctionBid.auctionEntry.user_id}\n` +
+            `Fill Ledger: ${fill.block}, Next Ledger: ${nextLedger}`
         );
       }
       // allow bidder handler to re-process the auction entry
@@ -199,9 +202,12 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
     if (requests.length > 0) {
       logger.info('Unwind found positions to manage', requests);
       // some positions to manage - submit the transaction
-      const pool_contract = new PoolContract(APP_CONFIG.poolAddress);
+      const pool =
+        APP_CONFIG.version === Version.V2
+          ? new PoolContractV2(APP_CONFIG.poolAddress)
+          : new PoolContractV1(APP_CONFIG.poolAddress);
       const result = await sorobanHelper.submitTransaction(
-        pool_contract.submit({
+        pool.submit({
           from: filler_pubkey,
           spender: filler_pubkey,
           to: filler_pubkey,

@@ -81,14 +81,22 @@ export class PoolEventHandler {
       }
       case PoolEventType.NewLiquidationAuction:
       case PoolEventType.NewAuction: {
-        let auction_type =
-          poolEvent.event.eventType === PoolEventType.NewLiquidationAuction
-            ? AuctionType.Liquidation
-            : poolEvent.event.auctionType;
-        let user =
-          poolEvent.event.eventType === PoolEventType.NewLiquidationAuction
-            ? poolEvent.event.user
-            : APP_CONFIG.backstopAddress;
+        let auction_type: AuctionType;
+        if ('auctionType' in poolEvent.event) {
+          auction_type = poolEvent.event.auctionType;
+        } else {
+          // New liquidation auction events do not have an auction type
+          auction_type = AuctionType.Liquidation;
+        }
+
+        let user: string;
+
+        // V1 interest auctions and bad debt auctions have no user
+        if ('user' in poolEvent.event) {
+          user = poolEvent.event.user;
+        } else {
+          user = APP_CONFIG.backstopAddress;
+        }
         // check if the auction should be bid on by an auctioneer
         let fillerFound = false;
         for (const filler of APP_CONFIG.fillers) {
@@ -130,7 +138,9 @@ export class PoolEventHandler {
         break;
       }
       case PoolEventType.FillAuction: {
-        const logMessage = `Auction Fill Event\nType ${AuctionType[poolEvent.event.auctionType]}\nFiller: ${poolEvent.event.from}\nUser: ${poolEvent.event.user}\nFill Percent: ${poolEvent.event.fillAmount}\nTx Hash: ${poolEvent.event.txHash}\n`;
+        const fillerAddress =
+          'from' in poolEvent.event ? poolEvent.event.from : poolEvent.event.filler;
+        const logMessage = `Auction Fill Event\nType ${AuctionType[poolEvent.event.auctionType]}\nFiller: ${fillerAddress}\nUser: ${poolEvent.event.user}\nFill Percent: ${poolEvent.event.fillAmount}\nTx Hash: ${poolEvent.event.txHash}\n`;
         await sendSlackNotification(logMessage);
         logger.info(logMessage);
         if (poolEvent.event.fillAmount === BigInt(100)) {
@@ -150,11 +160,11 @@ export class PoolEventHandler {
             await this.sorobanHelper.loadUserPositionEstimate(poolEvent.event.user);
           updateUser(this.db, pool, user, userPositionsEstimate, poolEvent.event.ledger);
           const { estimate: fillerPositionsEstimate, user: filler } =
-            await this.sorobanHelper.loadUserPositionEstimate(poolEvent.event.from);
+            await this.sorobanHelper.loadUserPositionEstimate(fillerAddress);
           updateUser(this.db, pool, filler, fillerPositionsEstimate, poolEvent.event.ledger);
         } else if (poolEvent.event.auctionType === AuctionType.BadDebt) {
           const { estimate: fillerPositionsEstimate, user: filler } =
-            await this.sorobanHelper.loadUserPositionEstimate(poolEvent.event.from);
+            await this.sorobanHelper.loadUserPositionEstimate(fillerAddress);
           updateUser(this.db, pool, filler, fillerPositionsEstimate, poolEvent.event.ledger);
           sendEvent(this.worker, {
             type: EventType.CHECK_USER,

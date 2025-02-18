@@ -1,4 +1,11 @@
-import { ContractError, ContractErrorType, PoolContract } from '@blend-capital/blend-sdk';
+import {
+  ContractError,
+  ContractErrorType,
+  FixedMath,
+  PoolContractV1,
+  PoolContractV2,
+  Version,
+} from '@blend-capital/blend-sdk';
 import { APP_CONFIG } from './utils/config.js';
 import { AuctionType } from './utils/db.js';
 import { serializeError, stringify } from './utils/json.js';
@@ -24,10 +31,14 @@ export interface UserLiquidation {
   type: WorkSubmissionType.LiquidateUser;
   user: string;
   liquidationPercent: bigint;
+  lot: string[];
+  bid: string[];
 }
 
 export interface BadDebtAuction {
   type: WorkSubmissionType.BadDebtAuction;
+  lot: string[];
+  bid: string[];
 }
 
 export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
@@ -45,7 +56,7 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
       case WorkSubmissionType.BadDebtTransfer:
         return this.submitBadDebtTransfer(sorobanHelper, submission);
       case WorkSubmissionType.BadDebtAuction:
-        return this.submitBadDebtAuction(sorobanHelper);
+        return this.submitBadDebtAuction(sorobanHelper, submission);
       default:
         logger.error(`Invalid submission type: ${stringify(submission)}`);
         // consume the submission
@@ -59,11 +70,23 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
   ): Promise<boolean> {
     try {
       logger.info(`Creating liquidation for user: ${userLiquidation.user}`);
-      const pool = new PoolContract(APP_CONFIG.poolAddress);
-      let op = pool.newLiquidationAuction({
-        user: userLiquidation.user,
-        percent_liquidated: userLiquidation.liquidationPercent,
-      });
+      let op: string;
+      if (APP_CONFIG.version === Version.V2) {
+        const pool = new PoolContractV2(APP_CONFIG.poolAddress);
+        op = pool.newAuction({
+          user: userLiquidation.user,
+          percent: FixedMath.toFloat(userLiquidation.liquidationPercent, 0),
+          auction_type: AuctionType.Liquidation,
+          bid: userLiquidation.bid,
+          lot: userLiquidation.lot,
+        });
+      } else {
+        const pool = new PoolContractV1(APP_CONFIG.poolAddress);
+        op = pool.newLiquidationAuction({
+          user: userLiquidation.user,
+          percent_liquidated: userLiquidation.liquidationPercent,
+        });
+      }
       const auctionExists =
         (await sorobanHelper.loadAuction(userLiquidation.user, AuctionType.Liquidation)) !==
         undefined;
@@ -110,7 +133,10 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
   ): Promise<boolean> {
     try {
       logger.info(`Transferring bad debt to backstop for user: ${badDebtTransfer.user}`);
-      const pool = new PoolContract(APP_CONFIG.poolAddress);
+      const pool =
+        APP_CONFIG.version === Version.V2
+          ? new PoolContractV2(APP_CONFIG.poolAddress)
+          : new PoolContractV1(APP_CONFIG.poolAddress);
       let op = pool.badDebt(badDebtTransfer.user);
       await sorobanHelper.submitTransaction(op, APP_CONFIG.keypair);
       const logMessage = `Successfully transferred bad debt to backstop for user: ${badDebtTransfer.user}`;
@@ -127,11 +153,26 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
     }
   }
 
-  async submitBadDebtAuction(sorobanHelper: SorobanHelper): Promise<boolean> {
+  async submitBadDebtAuction(
+    sorobanHelper: SorobanHelper,
+    submission: BadDebtAuction
+  ): Promise<boolean> {
     try {
       logger.info(`Creating bad debt auction`);
-      const pool = new PoolContract(APP_CONFIG.poolAddress);
-      let op = pool.newBadDebtAuction();
+      let op: string;
+      if (APP_CONFIG.version === Version.V2) {
+        const pool = new PoolContractV2(APP_CONFIG.poolAddress);
+        op = pool.newAuction({
+          user: APP_CONFIG.backstopAddress,
+          percent: 100,
+          auction_type: AuctionType.BadDebt,
+          bid: submission.bid,
+          lot: submission.lot,
+        });
+      } else {
+        const pool = new PoolContractV1(APP_CONFIG.poolAddress);
+        op = pool.newBadDebtAuction();
+      }
       const auctionExists =
         (await sorobanHelper.loadAuction(APP_CONFIG.backstopAddress, AuctionType.BadDebt)) !==
         undefined;

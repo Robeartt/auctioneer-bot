@@ -50,6 +50,8 @@ describe('WorkSubmitter', () => {
       type: WorkSubmissionType.LiquidateUser,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
+      lot: [],
+      bid: [],
     };
 
     const result = await workSubmitter.submit(submission);
@@ -75,6 +77,8 @@ describe('WorkSubmitter', () => {
       type: WorkSubmissionType.LiquidateUser,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
+      lot: [],
+      bid: [],
     };
 
     const result = await workSubmitter.submit(submission);
@@ -94,6 +98,8 @@ describe('WorkSubmitter', () => {
       type: WorkSubmissionType.LiquidateUser,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
+      lot: [],
+      bid: [],
     };
 
     const result = await workSubmitter.submit(submission);
@@ -113,6 +119,8 @@ describe('WorkSubmitter', () => {
       type: WorkSubmissionType.LiquidateUser,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(100),
+      lot: [],
+      bid: [],
     };
 
     const result = await workSubmitter.submit(submission);
@@ -132,6 +140,8 @@ describe('WorkSubmitter', () => {
       type: WorkSubmissionType.LiquidateUser,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
+      lot: [],
+      bid: [],
     };
 
     const result = await workSubmitter.submit(submission);
@@ -151,6 +161,8 @@ describe('WorkSubmitter', () => {
       type: WorkSubmissionType.LiquidateUser,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(1),
+      lot: [],
+      bid: [],
     };
 
     const result = await workSubmitter.submit(submission);
@@ -170,6 +182,8 @@ describe('WorkSubmitter', () => {
       type: WorkSubmissionType.LiquidateUser,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
+      lot: [],
+      bid: [],
     };
 
     const result = await workSubmitter.submit(submission);
@@ -189,6 +203,8 @@ describe('WorkSubmitter', () => {
       type: WorkSubmissionType.LiquidateUser,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
+      lot: [],
+      bid: [],
     };
 
     workSubmitter.addSubmission(submission, 3, 0);
@@ -220,6 +236,8 @@ describe('WorkSubmitter', () => {
 
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtAuction,
+      lot: [],
+      bid: [],
     };
     const result = await workSubmitter.submit(submission);
 
@@ -240,6 +258,8 @@ describe('WorkSubmitter', () => {
 
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtAuction,
+      lot: [],
+      bid: [],
     };
     const result = await workSubmitter.submit(submission);
 
@@ -253,6 +273,8 @@ describe('WorkSubmitter', () => {
       type: WorkSubmissionType.LiquidateUser,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
+      lot: [],
+      bid: [],
     };
     workSubmitter.onDrop(submission);
 
@@ -277,6 +299,8 @@ describe('WorkSubmitter', () => {
   it('should log an error when a bad debt auction is dropped', () => {
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtAuction,
+      lot: [],
+      bid: [],
     };
 
     workSubmitter.onDrop(submission);

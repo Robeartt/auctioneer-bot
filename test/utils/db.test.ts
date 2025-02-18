@@ -8,7 +8,7 @@ import {
   StatusEntry,
   PriceEntry,
 } from '../../src/utils/db.js';
-import { parse, stringify } from '../../src/utils/json.js';
+import { parse } from '../../src/utils/json.js';
 import { logger } from '../../src/utils/logger.js';
 import { inMemoryAuctioneerDb } from '../helpers/mocks.js';
 

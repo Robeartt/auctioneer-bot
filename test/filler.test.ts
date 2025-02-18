@@ -286,7 +286,7 @@ describe('filler', () => {
     });
   });
   describe('managePositions', () => {
-    const assets = mockPool.config.reserveList;
+    const assets = mockPool.metadata.reserveList;
     const mockOracle = new PoolOracle(
       'CATKK5ZNJCKQQWTUWIUFZMY6V6MOQUGSTFSXMNQZHVJHYF7GVV36FB3Y',
       new Map<string, PriceData>([
@@ -471,9 +471,7 @@ describe('filler', () => {
         // dTokens
         new Map<number, bigint>([]),
         // bTokens - (1.007 is ~b_rate)
-        new Map<number, bigint>([
-          [1, FixedMath.toFixed(100.8 / 1.007, 7)],
-        ]),
+        new Map<number, bigint>([[1, FixedMath.toFixed(100.8 / 1.007, 7)]]),
         new Map<number, bigint>([])
       );
       const balances = new Map<string, bigint>([
@@ -494,9 +492,7 @@ describe('filler', () => {
         // dTokens
         new Map<number, bigint>([[0, FixedMath.toFixed(200, 7)]]),
         // bTokens
-        new Map<number, bigint>([
-          [1, FixedMath.toFixed(150, 7)],
-        ]),
+        new Map<number, bigint>([[1, FixedMath.toFixed(150, 7)]]),
         new Map<number, bigint>([])
       );
       const balances = new Map<string, bigint>([
