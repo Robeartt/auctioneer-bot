@@ -299,7 +299,7 @@ export async function calculateBlockFillAndPercent(
     }
   }
 
-  let requestType: RequestType;
+  let requestType: RequestType = RequestType.FillUserLiquidationAuction;
   switch (scaledAuction.type) {
     case AuctionType.Liquidation:
       requestType = RequestType.FillUserLiquidationAuction;
