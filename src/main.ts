@@ -3,10 +3,10 @@ import { fork } from 'child_process';
 import { runCollector } from './collector.js';
 import {
   EventType,
-  InitEvent,
   OracleScanEvent,
   PriceUpdateEvent,
   UserRefreshEvent,
+  ValidatePoolsEvent,
 } from './events.js';
 import { PoolEventHandler } from './pool_event_handler.js';
 import { APP_CONFIG } from './utils/config.js';
@@ -80,12 +80,13 @@ async function main() {
 
   console.log('Auctioneer started successfully.');
 
-  // check pool loading on startup
-  const initEvent: InitEvent = {
-    type: EventType.INIT,
+  // validate pool configs on startup
+  const validatePoolsEvent: ValidatePoolsEvent = {
+    type: EventType.VALIDATE_POOLS,
     timestamp: Date.now(),
+    pools: APP_CONFIG.poolConfigs,
   };
-  sendEvent(worker, initEvent);
+  sendEvent(worker, validatePoolsEvent);
 
   // update price on startup
   const priceEvent: PriceUpdateEvent = {
@@ -93,25 +94,30 @@ async function main() {
     timestamp: Date.now(),
   };
   sendEvent(worker, priceEvent);
-  // update price on startup
-  const oracleEvent: OracleScanEvent = {
-    type: EventType.ORACLE_SCAN,
-    timestamp: Date.now(),
-  };
-  sendEvent(worker, oracleEvent);
-  // pull in new manually added users (updated ledger = 0)
-  const userEvent: UserRefreshEvent = {
-    type: EventType.USER_REFRESH,
-    timestamp: Date.now(),
-    cutoff: 0,
-  };
-  sendEvent(worker, userEvent);
+
+  for (const poolConfig of APP_CONFIG.poolConfigs) {
+    // update price on startup
+    const oracleEvent: OracleScanEvent = {
+      type: EventType.ORACLE_SCAN,
+      timestamp: Date.now(),
+      poolConfig,
+    };
+    sendEvent(worker, oracleEvent);
+    // pull in new manually added users (updated ledger = 0)
+    const userEvent: UserRefreshEvent = {
+      type: EventType.USER_REFRESH,
+      timestamp: Date.now(),
+      cutoff: 0,
+      poolConfig,
+    };
+    sendEvent(worker, userEvent);
+  }
 
   collectorInterval = setInterval(async () => {
     try {
       let sorobanHelper = new SorobanHelper();
       let poolEventHandler = new PoolEventHandler(db, sorobanHelper, worker);
-      await runCollector(worker, bidder, db, stellarRpc, APP_CONFIG.poolAddress, poolEventHandler);
+      await runCollector(worker, bidder, db, stellarRpc, APP_CONFIG.poolConfigs, poolEventHandler);
     } catch (e: any) {
       logger.error(`Error in collector`, e);
     }

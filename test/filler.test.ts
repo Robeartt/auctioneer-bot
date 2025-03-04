@@ -6,10 +6,11 @@ import {
   PriceData,
   Request,
   RequestType,
+  Version,
 } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import { canFillerBid, getFillerProfitPct, managePositions } from '../src/filler';
-import { AuctionProfit, Filler } from '../src/utils/config';
+import { AuctionProfit, Filler, PoolConfig } from '../src/utils/config';
 import { mockPool } from './helpers/mocks';
 
 jest.mock('../src/utils/config.js', () => {
@@ -29,14 +30,19 @@ jest.mock('../src/utils/logger.js', () => ({
 
 describe('filler', () => {
   describe('canFillerBid', () => {
+    let poolConfig: PoolConfig = {
+      poolAddress: 'pool1',
+      backstopAddress: 'backstop1',
+      primaryAsset: 'XLM',
+      minPrimaryCollateral: FixedMath.toFixed(100, 7),
+      version: Version.V1,
+    };
     it('returns true if the filler supports the auction', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
         defaultProfitPct: 0.1,
         minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
         forceFill: true,
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
@@ -61,10 +67,10 @@ describe('filler', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
+
         defaultProfitPct: 0.1,
         minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
+
         forceFill: true,
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
@@ -89,10 +95,10 @@ describe('filler', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
+
         defaultProfitPct: 0.1,
         minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
+
         forceFill: true,
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
@@ -118,10 +124,10 @@ describe('filler', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
+
         defaultProfitPct: 0.1,
         minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
+
         forceFill: true,
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
@@ -155,10 +161,10 @@ describe('filler', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
+
         defaultProfitPct: 0.1,
         minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
+
         forceFill: true,
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
@@ -189,10 +195,10 @@ describe('filler', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
+
         defaultProfitPct: 0.1,
         minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
+
         forceFill: true,
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
@@ -226,10 +232,10 @@ describe('filler', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
+
         defaultProfitPct: 0.1,
         minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
+
         forceFill: true,
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
@@ -263,10 +269,10 @@ describe('filler', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
+
         defaultProfitPct: 0.1,
         minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
+
         forceFill: true,
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
@@ -298,13 +304,20 @@ describe('filler', () => {
       7,
       53255053
     );
+    const poolConfig: PoolConfig = {
+      poolAddress: mockPool.id,
+      backstopAddress: mockPool.metadata.backstop,
+      primaryAsset: assets[1],
+      minPrimaryCollateral: FixedMath.toFixed(100, 7),
+      version: Version.V1,
+    };
     const filler: Filler = {
       name: 'Teapot',
       keypair: Keypair.random(),
-      primaryAsset: assets[1],
+
       defaultProfitPct: 0.1,
       minHealthFactor: 1.5,
-      minPrimaryCollateral: FixedMath.toFixed(100, 7),
+
       forceFill: true,
       supportedBid: [assets[1], assets[0]],
       supportedLot: [assets[1], assets[2], assets[3]],
@@ -325,7 +338,14 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(0, 7)],
       ]);
 
-      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
+      const requests = managePositions(
+        filler,
+        mockPool,
+        poolConfig,
+        mockOracle,
+        positions,
+        balances
+      );
 
       const expectedRequests: Request[] = [
         {
@@ -357,7 +377,14 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(0, 7)],
       ]);
 
-      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
+      const requests = managePositions(
+        filler,
+        mockPool,
+        poolConfig,
+        mockOracle,
+        positions,
+        balances
+      );
 
       const expectedRequests: Request[] = [
         {
@@ -384,7 +411,14 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(0, 7)],
       ]);
 
-      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
+      const requests = managePositions(
+        filler,
+        mockPool,
+        poolConfig,
+        mockOracle,
+        positions,
+        balances
+      );
 
       const expectedRequests: Request[] = [
         {
@@ -412,7 +446,14 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(0, 7)],
       ]);
 
-      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
+      const requests = managePositions(
+        filler,
+        mockPool,
+        poolConfig,
+        mockOracle,
+        positions,
+        balances
+      );
       // return minimum health factor back to 1.5
       filler.minHealthFactor = 1.5;
 
@@ -449,7 +490,14 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(0, 7)],
       ]);
 
-      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
+      const requests = managePositions(
+        filler,
+        mockPool,
+        poolConfig,
+        mockOracle,
+        positions,
+        balances
+      );
 
       const expectedRequests: Request[] = [
         {
@@ -481,7 +529,14 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(0, 7)],
       ]);
 
-      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
+      const requests = managePositions(
+        filler,
+        mockPool,
+        poolConfig,
+        mockOracle,
+        positions,
+        balances
+      );
 
       const expectedRequests: Request[] = [];
       expect(requests).toEqual(expectedRequests);
@@ -502,7 +557,14 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(0, 7)],
       ]);
 
-      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
+      const requests = managePositions(
+        filler,
+        mockPool,
+        poolConfig,
+        mockOracle,
+        positions,
+        balances
+      );
 
       const expectedRequests: Request[] = [];
       expect(requests).toEqual(expectedRequests);
@@ -529,7 +591,14 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(1, 7)],
       ]);
 
-      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
+      const requests = managePositions(
+        filler,
+        mockPool,
+        poolConfig,
+        mockOracle,
+        positions,
+        balances
+      );
 
       const expectedRequests: Request[] = [
         {
@@ -573,7 +642,14 @@ describe('filler', () => {
         [assets[3], FixedMath.toFixed(1, 7)],
       ]);
 
-      const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
+      const requests = managePositions(
+        filler,
+        mockPool,
+        poolConfig,
+        mockOracle,
+        positions,
+        balances
+      );
 
       const expectedRequests: Request[] = [
         {

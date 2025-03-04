@@ -49,7 +49,7 @@ export class WorkHandler {
       } catch (error) {
         retries++;
         if (retries >= MAX_RETRIES) {
-          if (appEvent.type === EventType.INIT) {
+          if (appEvent.type === EventType.VALIDATE_POOLS) {
             throw error;
           }
           await deadletterEvent(appEvent);
@@ -75,33 +75,47 @@ export class WorkHandler {
    */
   async processEvent(appEvent: AppEvent): Promise<void> {
     switch (appEvent.type) {
-      case EventType.INIT: {
-        try {
-          await this.sorobanHelper.loadPool();
-        } catch (error) {
-          throw new Error(
-            `Failed to load pool please check that pool id and version are correct. Error: ${error}`
-          );
+      case EventType.VALIDATE_POOLS: {
+        for (const config of appEvent.pools) {
+          try {
+            const pool = await this.sorobanHelper.loadPool(config);
+            if (pool.metadata.backstop !== config.backstopAddress) {
+              throw new Error(
+                `Pool backstop address ${pool.metadata.backstop} does not match config ${config.backstopAddress}`
+              );
+            }
+          } catch (error) {
+            throw new Error(
+              `Failed to load pool: ${config.poolAddress} please check that the pool config is correct. Error: ${error}`
+            );
+          }
         }
         break;
       }
+
       case EventType.PRICE_UPDATE: {
         await setPrices(this.db);
         break;
       }
       case EventType.ORACLE_SCAN: {
-        const poolOracle = await this.sorobanHelper.loadPoolOracle();
+        const poolOracle = await this.sorobanHelper.loadPoolOracle(appEvent.poolConfig);
         const priceChanges = this.oracleHistory.getSignificantPriceChanges(poolOracle);
         // @dev: Insert into a set to ensure uniqueness
         let usersToCheck = new Set<string>();
         for (const assetId of priceChanges.up) {
-          const usersWithLiability = this.db.getUserEntriesWithLiability(assetId);
+          const usersWithLiability = this.db.getUserEntriesWithLiability(
+            appEvent.poolConfig.poolAddress,
+            assetId
+          );
           for (const user of usersWithLiability) {
             usersToCheck.add(user.user_id);
           }
         }
         for (const assetId of priceChanges.down) {
-          const usersWithCollateral = this.db.getUserEntriesWithCollateral(assetId);
+          const usersWithCollateral = this.db.getUserEntriesWithCollateral(
+            appEvent.poolConfig.poolAddress,
+            assetId
+          );
           for (const user of usersWithCollateral) {
             usersToCheck.add(user.user_id);
           }
@@ -109,6 +123,7 @@ export class WorkHandler {
         const liquidations = await checkUsersForLiquidationsAndBadDebt(
           this.db,
           this.sorobanHelper,
+          appEvent.poolConfig,
           Array.from(usersToCheck)
         );
         for (const liquidation of liquidations) {
@@ -117,29 +132,35 @@ export class WorkHandler {
         break;
       }
       case EventType.LIQ_SCAN: {
-        const liquidations = await scanUsers(this.db, this.sorobanHelper);
+        const liquidations = await scanUsers(this.db, this.sorobanHelper, appEvent.poolConfig);
         for (const liquidation of liquidations) {
           this.submissionQueue.addSubmission(liquidation, 3);
         }
         break;
       }
       case EventType.USER_REFRESH: {
-        const oldUsers = this.db.getUserEntriesUpdatedBefore(appEvent.cutoff);
+        const oldUsers = this.db.getUserEntriesUpdatedBefore(
+          appEvent.poolConfig.poolAddress,
+          appEvent.cutoff
+        );
         if (oldUsers.length === 0) {
           return;
         }
-        const pool = await this.sorobanHelper.loadPool();
+        const pool = await this.sorobanHelper.loadPool(appEvent.poolConfig);
         for (const user of oldUsers) {
           const { estimate: poolUserEstimate, user: poolUser } =
-            await this.sorobanHelper.loadUserPositionEstimate(user.user_id);
+            await this.sorobanHelper.loadUserPositionEstimate(appEvent.poolConfig, user.user_id);
           updateUser(this.db, pool, poolUser, poolUserEstimate);
         }
         break;
       }
       case EventType.CHECK_USER: {
-        const submissions = await checkUsersForLiquidationsAndBadDebt(this.db, this.sorobanHelper, [
-          appEvent.userId,
-        ]);
+        const submissions = await checkUsersForLiquidationsAndBadDebt(
+          this.db,
+          this.sorobanHelper,
+          appEvent.poolConfig,
+          [appEvent.userId]
+        );
         for (const submission of submissions) {
           this.submissionQueue.addSubmission(submission, 3);
         }

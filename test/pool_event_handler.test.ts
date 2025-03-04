@@ -1,15 +1,17 @@
 import {
   BlendContractType,
+  FixedMath,
   PoolEventType,
   PoolUser,
   Positions,
   PositionsEstimate,
+  Version,
 } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import { EventType, PoolEventEvent } from '../src/events.js';
 import { PoolEventHandler } from '../src/pool_event_handler.js';
 import { updateUser } from '../src/user.js';
-import { APP_CONFIG, AppConfig } from '../src/utils/config.js';
+import { APP_CONFIG, AppConfig, PoolConfig } from '../src/utils/config.js';
 import { AuctioneerDatabase, AuctionEntry, AuctionType } from '../src/utils/db.js';
 import { logger } from '../src/utils/logger.js';
 import { deadletterEvent, sendEvent } from '../src/utils/messages.js';
@@ -29,7 +31,6 @@ jest.mock('../src/utils/logger.js', () => ({
 }));
 jest.mock('../src/utils/config.js', () => {
   let config: AppConfig = {
-    backstopAddress: Keypair.random().publicKey(),
     fillers: [
       {
         name: 'filler1',
@@ -67,7 +68,13 @@ describe('poolEventHandler', () => {
   let user: PoolUser;
 
   const mockedWorkerProcess = { name: 'worker' } as any;
-
+  const poolConfig: PoolConfig = {
+    poolAddress: mockPool.id,
+    backstopAddress: mockPool.metadata.backstop,
+    version: Version.V1,
+    minPrimaryCollateral: FixedMath.toFixed(100, 7),
+    primaryAsset: 'USD',
+  };
   beforeEach(() => {
     jest.clearAllMocks();
     db = inMemoryAuctioneerDb();
@@ -101,6 +108,7 @@ describe('poolEventHandler', () => {
   it('should process event successfully without retries', async () => {
     const poolEvent: PoolEventEvent = {
       timestamp: 999,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -126,6 +134,7 @@ describe('poolEventHandler', () => {
   it('should retry processing event and succeed', async () => {
     const poolEvent: PoolEventEvent = {
       timestamp: 999,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -158,6 +167,7 @@ describe('poolEventHandler', () => {
   it('should send event to dead letter queue after max retries', async () => {
     const poolEvent: PoolEventEvent = {
       timestamp: 999,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -185,6 +195,7 @@ describe('poolEventHandler', () => {
   it('should log error if deadLetterEvent fails after max retries', async () => {
     const poolEvent: PoolEventEvent = {
       timestamp: 999,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -224,6 +235,7 @@ describe('poolEventHandler', () => {
     let ledger = 12345;
     let poolEvent: PoolEventEvent = {
       timestamp: 777,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -249,6 +261,7 @@ describe('poolEventHandler', () => {
     let ledger = 12345;
     let poolEvent: PoolEventEvent = {
       timestamp: 777,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -274,6 +287,7 @@ describe('poolEventHandler', () => {
     let ledger = 12345;
     let poolEvent: PoolEventEvent = {
       timestamp: 777,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -299,6 +313,7 @@ describe('poolEventHandler', () => {
     let ledger = 12345;
     let poolEvent: PoolEventEvent = {
       timestamp: 777,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -325,6 +340,7 @@ describe('poolEventHandler', () => {
     let ledger = 12345;
     let poolEvent: PoolEventEvent = {
       timestamp: 777,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -345,7 +361,7 @@ describe('poolEventHandler', () => {
 
     await poolEventHandler.handlePoolEvent(poolEvent);
 
-    let auctionEntry = db.getAuctionEntry(user, AuctionType.Liquidation);
+    let auctionEntry = db.getAuctionEntry(poolConfig.poolAddress, user, AuctionType.Liquidation);
     if (auctionEntry === undefined) {
       fail('Auction entry not inserted');
     }
@@ -361,6 +377,7 @@ describe('poolEventHandler', () => {
     let ledger = 12345;
     let poolEvent: PoolEventEvent = {
       timestamp: 777,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -381,11 +398,15 @@ describe('poolEventHandler', () => {
 
     await poolEventHandler.handlePoolEvent(poolEvent);
 
-    let auctionEntry = db.getAuctionEntry(APP_CONFIG.backstopAddress, AuctionType.Interest);
+    let auctionEntry = db.getAuctionEntry(
+      poolConfig.poolAddress,
+      poolConfig.backstopAddress,
+      AuctionType.Interest
+    );
     if (auctionEntry === undefined) {
       fail('Auction entry not inserted');
     }
-    expect(auctionEntry.user_id).toEqual(APP_CONFIG.backstopAddress);
+    expect(auctionEntry.user_id).toEqual(poolConfig.backstopAddress);
     expect(auctionEntry.auction_type).toEqual(AuctionType.Interest);
     expect(auctionEntry.filler).toEqual(APP_CONFIG.fillers[0].keypair.publicKey());
     expect(auctionEntry.start_block).toEqual(500);
@@ -397,6 +418,7 @@ describe('poolEventHandler', () => {
     let ledger = 12345;
     let poolEvent: PoolEventEvent = {
       timestamp: 777,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -417,11 +439,15 @@ describe('poolEventHandler', () => {
 
     await poolEventHandler.handlePoolEvent(poolEvent);
 
-    let auctionEntry = db.getAuctionEntry(APP_CONFIG.backstopAddress, AuctionType.BadDebt);
+    let auctionEntry = db.getAuctionEntry(
+      poolConfig.poolAddress,
+      poolConfig.backstopAddress,
+      AuctionType.BadDebt
+    );
     if (auctionEntry === undefined) {
       fail('Auction entry not inserted');
     }
-    expect(auctionEntry.user_id).toEqual(APP_CONFIG.backstopAddress);
+    expect(auctionEntry.user_id).toEqual(poolConfig.backstopAddress);
     expect(auctionEntry.auction_type).toEqual(AuctionType.BadDebt);
     // prioritize the first filler
     expect(auctionEntry.filler).toEqual(APP_CONFIG.fillers[0].keypair.publicKey());
@@ -435,6 +461,7 @@ describe('poolEventHandler', () => {
     let ledger = 12345;
     let poolEvent: PoolEventEvent = {
       timestamp: 777,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -455,7 +482,7 @@ describe('poolEventHandler', () => {
 
     await poolEventHandler.handlePoolEvent(poolEvent);
 
-    let auctionEntries = db.getAllAuctionEntries();
+    let auctionEntries = db.getAllAuctionEntries(mockPool.id);
     expect(auctionEntries.length).toEqual(0);
   });
 
@@ -463,6 +490,7 @@ describe('poolEventHandler', () => {
     let other_user = Keypair.random().publicKey();
     let user = Keypair.random().publicKey();
     let auction: AuctionEntry = {
+      pool_id: poolConfig.poolAddress,
       user_id: other_user,
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -471,6 +499,7 @@ describe('poolEventHandler', () => {
       updated: 12345,
     };
     let auction_to_be_deleted: AuctionEntry = {
+      pool_id: poolConfig.poolAddress,
       user_id: user,
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -481,12 +510,13 @@ describe('poolEventHandler', () => {
     db.setAuctionEntry(auction);
     db.setAuctionEntry(auction_to_be_deleted);
 
-    let preEventEntries = db.getAllAuctionEntries();
+    let preEventEntries = db.getAllAuctionEntries(mockPool.id);
     expect(preEventEntries.length).toEqual(2);
 
     let ledger = 12345;
     let poolEvent: PoolEventEvent = {
       timestamp: 777,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -502,15 +532,16 @@ describe('poolEventHandler', () => {
 
     await poolEventHandler.handlePoolEvent(poolEvent);
 
-    let auctionEntries = db.getAllAuctionEntries();
+    let auctionEntries = db.getAllAuctionEntries(mockPool.id);
     expect(auctionEntries.length).toEqual(1);
-    let deletedAuction = db.getAuctionEntry(user, AuctionType.Liquidation);
+    let deletedAuction = db.getAuctionEntry(poolConfig.poolAddress, user, AuctionType.Liquidation);
     expect(deletedAuction).toBeUndefined();
   });
 
   it('deletes fill auction and updates user safely for liquidation fill auction event', async () => {
     let other_user = Keypair.random().publicKey();
     let other_auction: AuctionEntry = {
+      pool_id: poolConfig.poolAddress,
       user_id: other_user,
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -519,6 +550,7 @@ describe('poolEventHandler', () => {
       updated: 12345,
     };
     let auction_to_be_filled: AuctionEntry = {
+      pool_id: poolConfig.poolAddress,
       user_id: pool_user,
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -529,11 +561,12 @@ describe('poolEventHandler', () => {
     db.setAuctionEntry(other_auction);
     db.setAuctionEntry(auction_to_be_filled);
 
-    let preEventEntries = db.getAllAuctionEntries();
+    let preEventEntries = db.getAllAuctionEntries(mockPool.id);
     expect(preEventEntries.length).toEqual(2);
 
     let poolEventPartial: PoolEventEvent = {
       timestamp: 777,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -552,11 +585,12 @@ describe('poolEventHandler', () => {
 
     await poolEventHandler.handlePoolEvent(poolEventPartial);
 
-    let partialEntries = db.getAllAuctionEntries();
+    let partialEntries = db.getAllAuctionEntries(mockPool.id);
     expect(partialEntries.length).toEqual(2);
 
     let poolEventFull: PoolEventEvent = {
       timestamp: 999,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -575,9 +609,13 @@ describe('poolEventHandler', () => {
 
     await poolEventHandler.handlePoolEvent(poolEventFull);
 
-    let entries = db.getAllAuctionEntries();
+    let entries = db.getAllAuctionEntries(mockPool.id);
     expect(entries.length).toEqual(1);
-    let deletedAuction = db.getAuctionEntry(pool_user, AuctionType.Liquidation);
+    let deletedAuction = db.getAuctionEntry(
+      poolConfig.poolAddress,
+      pool_user,
+      AuctionType.Liquidation
+    );
     expect(deletedAuction).toBeUndefined();
     expect(mockedUpdateUser).toHaveBeenCalledWith(db, mockPool, user, estimate, 12350);
   });
@@ -585,6 +623,7 @@ describe('poolEventHandler', () => {
   it('deletes fill auction for other fill auction event', async () => {
     let other_user = Keypair.random().publicKey();
     let other_auction: AuctionEntry = {
+      pool_id: poolConfig.poolAddress,
       user_id: other_user,
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -593,7 +632,8 @@ describe('poolEventHandler', () => {
       updated: 12345,
     };
     let auction_to_be_filled: AuctionEntry = {
-      user_id: APP_CONFIG.backstopAddress,
+      pool_id: poolConfig.poolAddress,
+      user_id: poolConfig.backstopAddress,
       auction_type: AuctionType.Interest,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
       start_block: 600,
@@ -603,11 +643,12 @@ describe('poolEventHandler', () => {
     db.setAuctionEntry(other_auction);
     db.setAuctionEntry(auction_to_be_filled);
 
-    let preEventEntries = db.getAllAuctionEntries();
+    let preEventEntries = db.getAllAuctionEntries(mockPool.id);
     expect(preEventEntries.length).toEqual(2);
 
     let poolEventFull: PoolEventEvent = {
       timestamp: 999,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -617,7 +658,7 @@ describe('poolEventHandler', () => {
         ledgerClosedAt: '2021-10-01T00:00:00Z',
         txHash: '0x123',
         eventType: PoolEventType.FillAuction,
-        user: APP_CONFIG.backstopAddress,
+        user: poolConfig.backstopAddress,
         auctionType: AuctionType.Interest,
         fillAmount: BigInt(100),
         from: Keypair.random().publicKey(),
@@ -626,9 +667,13 @@ describe('poolEventHandler', () => {
 
     await poolEventHandler.handlePoolEvent(poolEventFull);
 
-    let entries = db.getAllAuctionEntries();
+    let entries = db.getAllAuctionEntries(mockPool.id);
     expect(entries.length).toEqual(1);
-    let deletedAuction = db.getAuctionEntry(APP_CONFIG.backstopAddress, AuctionType.Interest);
+    let deletedAuction = db.getAuctionEntry(
+      poolConfig.poolAddress,
+      poolConfig.backstopAddress,
+      AuctionType.Interest
+    );
     expect(deletedAuction).toBeUndefined();
     expect(mockedUpdateUser).toHaveBeenCalledTimes(0);
   });
@@ -636,6 +681,7 @@ describe('poolEventHandler', () => {
   it('should log an error for unhandled event types', async () => {
     let poolEvent: PoolEventEvent = {
       timestamp: 999,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -645,7 +691,7 @@ describe('poolEventHandler', () => {
         ledgerClosedAt: '2021-10-01T00:00:00Z',
         txHash: '0x123',
         eventType: 'UNHANDLED_EVENT_TYPE' as any, // This is an unhandled event type
-        user: APP_CONFIG.backstopAddress,
+        user: poolConfig.backstopAddress,
         auctionType: AuctionType.Interest,
         fillAmount: BigInt(100),
         from: Keypair.random().publicKey(),
@@ -659,7 +705,8 @@ describe('poolEventHandler', () => {
 
   it('Sends check user event for backstop on bad debt fills', async () => {
     let auction_to_be_filled: AuctionEntry = {
-      user_id: APP_CONFIG.backstopAddress,
+      pool_id: poolConfig.poolAddress,
+      user_id: poolConfig.backstopAddress,
       auction_type: AuctionType.BadDebt,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
       start_block: 600,
@@ -670,6 +717,7 @@ describe('poolEventHandler', () => {
 
     let poolEvent: PoolEventEvent = {
       timestamp: 777,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -679,7 +727,7 @@ describe('poolEventHandler', () => {
         ledgerClosedAt: '2021-10-01T00:00:00Z',
         txHash: '0x123',
         eventType: PoolEventType.FillAuction,
-        user: APP_CONFIG.backstopAddress,
+        user: poolConfig.backstopAddress,
         auctionType: AuctionType.BadDebt,
         fillAmount: BigInt(100),
         from: Keypair.random().publicKey(),
@@ -691,13 +739,15 @@ describe('poolEventHandler', () => {
     expect(mockedSendEvent).toHaveBeenCalledWith(mockedWorkerProcess, {
       type: EventType.CHECK_USER,
       timestamp: Date.now(),
-      userId: APP_CONFIG.backstopAddress,
+      poolConfig,
+      userId: poolConfig.backstopAddress,
     });
   });
 
   it('Sends check user event for backstop on bad debt transfers', async () => {
     let poolEvent: PoolEventEvent = {
       timestamp: 777,
+      poolConfig,
       type: EventType.POOL_EVENT,
       event: {
         id: '1',
@@ -707,7 +757,7 @@ describe('poolEventHandler', () => {
         ledgerClosedAt: '2021-10-01T00:00:00Z',
         txHash: '0x123',
         eventType: PoolEventType.BadDebt,
-        user: APP_CONFIG.backstopAddress,
+        user: poolConfig.backstopAddress,
         dTokens: BigInt(1234),
         assetId: 'USD',
       },
@@ -718,7 +768,8 @@ describe('poolEventHandler', () => {
     expect(mockedSendEvent).toHaveBeenCalledWith(mockedWorkerProcess, {
       type: EventType.CHECK_USER,
       timestamp: Date.now(),
-      userId: APP_CONFIG.backstopAddress,
+      poolConfig,
+      userId: poolConfig.backstopAddress,
     });
   });
 });

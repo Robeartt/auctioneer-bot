@@ -2,7 +2,7 @@ import { PoolContractV1, PoolContractV2, Version } from '@blend-capital/blend-sd
 import { rpc } from '@stellar/stellar-sdk';
 import { calculateAuctionFill } from './auction.js';
 import { getFillerAvailableBalances, managePositions } from './filler.js';
-import { APP_CONFIG, Filler } from './utils/config.js';
+import { APP_CONFIG, Filler, PoolConfig } from './utils/config.js';
 import { AuctioneerDatabase, AuctionEntry, AuctionType } from './utils/db.js';
 import { serializeError, stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
@@ -17,13 +17,18 @@ export enum BidderSubmissionType {
   UNWIND = 'unwind',
 }
 
-export interface AuctionBid {
+export interface BaseBidderSubmission {
+  type: BidderSubmissionType;
+  poolConfig: PoolConfig;
+}
+
+export interface AuctionBid extends BaseBidderSubmission {
   type: BidderSubmissionType.BID;
   filler: Filler;
   auctionEntry: AuctionEntry;
 }
 
-export interface FillerUnwind {
+export interface FillerUnwind extends BaseBidderSubmission {
   type: BidderSubmissionType.UNWIND;
   filler: Filler;
 }
@@ -80,6 +85,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       const nextLedger = currLedger + 1;
 
       const auction = await sorobanHelper.loadAuction(
+        auctionBid.poolConfig,
         auctionBid.auctionEntry.user_id,
         auctionBid.auctionEntry.auction_type
       );
@@ -90,6 +96,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       }
 
       const fill = await calculateAuctionFill(
+        auctionBid.poolConfig,
         auctionBid.filler,
         auction,
         nextLedger,
@@ -99,9 +106,9 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
 
       if (nextLedger >= fill.block) {
         const pool =
-          APP_CONFIG.version === Version.V2
-            ? new PoolContractV2(APP_CONFIG.poolAddress)
-            : new PoolContractV1(APP_CONFIG.poolAddress);
+          auctionBid.poolConfig.version === Version.V2
+            ? new PoolContractV2(auctionBid.poolConfig.poolAddress)
+            : new PoolContractV1(auctionBid.poolConfig.poolAddress);
 
         const result = await sorobanHelper.submitTransaction(
           pool.submit({
@@ -115,6 +122,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         const [scaledAuction] = auction.scale(result.ledger, fill.percent);
         this.db.setFilledAuctionEntry({
           tx_hash: result.txHash,
+          pool_id: auctionBid.auctionEntry.pool_id,
           filler: auctionBid.auctionEntry.filler,
           user_id: auctionBid.auctionEntry.user_id,
           auction_type: auctionBid.auctionEntry.auction_type,
@@ -126,7 +134,14 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
           fill_block: result.ledger,
           timestamp: result.latestLedgerCloseTime,
         });
-        this.addSubmission({ type: BidderSubmissionType.UNWIND, filler: auctionBid.filler }, 2);
+        this.addSubmission(
+          {
+            type: BidderSubmissionType.UNWIND,
+            filler: auctionBid.filler,
+            poolConfig: auctionBid.poolConfig,
+          },
+          2
+        );
         let logMessage =
           `Successful bid on auction\n` +
           `Type: ${AuctionType[auctionBid.auctionEntry.auction_type]}\n` +
@@ -135,7 +150,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
           `Fill Percent ${fill.percent}\n` +
           `Ledger Fill Delta ${result.ledger - auctionBid.auctionEntry.start_block}\n` +
           `Hash ${result.txHash}\n`;
-        await sendSlackNotification(logMessage);
+        await sendSlackNotification(auctionBid.poolConfig.poolAddress, logMessage);
         logger.info(logMessage);
         return true;
       } else {
@@ -155,6 +170,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         `User: ${auctionBid.auctionEntry.user_id}\n` +
         `Filler: ${auctionBid.filler.name}`;
       await sendSlackNotification(
+        auctionBid.poolConfig.poolAddress,
         `<!channel> ` + logMessage + `\nError: ${stringify(serializeError(e))}`
       );
       logger.error(logMessage, e);
@@ -167,14 +183,14 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
     const filler_pubkey = fillerUnwind.filler.keypair.publicKey();
     const filler_tokens = [
       ...new Set([
-        fillerUnwind.filler.primaryAsset,
+        fillerUnwind.poolConfig.primaryAsset,
         ...fillerUnwind.filler.supportedBid,
         ...fillerUnwind.filler.supportedLot,
       ]),
     ];
-    const pool = await sorobanHelper.loadPool();
-    const poolOracle = await sorobanHelper.loadPoolOracle();
-    const filler_user = await sorobanHelper.loadUser(filler_pubkey);
+    const pool = await sorobanHelper.loadPool(fillerUnwind.poolConfig);
+    const poolOracle = await sorobanHelper.loadPoolOracle(fillerUnwind.poolConfig);
+    const filler_user = await sorobanHelper.loadUser(fillerUnwind.poolConfig, filler_pubkey);
     const filler_balances = await getFillerAvailableBalances(
       fillerUnwind.filler,
       filler_tokens,
@@ -195,6 +211,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
     let requests = managePositions(
       fillerUnwind.filler,
       pool,
+      fillerUnwind.poolConfig,
       poolOracle,
       filler_user.positions,
       filler_balances
@@ -203,9 +220,9 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       logger.info('Unwind found positions to manage', requests);
       // some positions to manage - submit the transaction
       const pool =
-        APP_CONFIG.version === Version.V2
-          ? new PoolContractV2(APP_CONFIG.poolAddress)
-          : new PoolContractV1(APP_CONFIG.poolAddress);
+        fillerUnwind.poolConfig.version === Version.V2
+          ? new PoolContractV2(fillerUnwind.poolConfig.poolAddress)
+          : new PoolContractV1(fillerUnwind.poolConfig.poolAddress);
       const result = await sorobanHelper.submitTransaction(
         pool.submit({
           from: filler_pubkey,
@@ -220,7 +237,14 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
           `Ledger: ${result.ledger}\n` +
           `Hash: ${result.txHash}`
       );
-      this.addSubmission({ type: BidderSubmissionType.UNWIND, filler: fillerUnwind.filler }, 2);
+      this.addSubmission(
+        {
+          type: BidderSubmissionType.UNWIND,
+          filler: fillerUnwind.filler,
+          poolConfig: fillerUnwind.poolConfig,
+        },
+        2
+      );
       return true;
     }
 
@@ -230,7 +254,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         `Filler: ${fillerUnwind.filler.name}\n` +
         `Positions: ${stringify(filler_user.positions, 2)}`;
       logger.info(logMessage);
-      await sendSlackNotification(logMessage);
+      await sendSlackNotification(fillerUnwind.poolConfig.poolAddress, logMessage);
       return true;
     }
 
@@ -255,6 +279,6 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         break;
     }
     logger.error(logMessage);
-    await sendSlackNotification(logMessage);
+    await sendSlackNotification(submission.poolConfig.poolAddress, logMessage);
   }
 }

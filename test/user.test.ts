@@ -29,7 +29,7 @@ describe('updateUser', () => {
     );
     updateUser(db, mockPool, user, user_estimate);
 
-    let user_entry = db.getUserEntry('GPUBKEY1');
+    let user_entry = db.getUserEntry(mockPool.id, 'GPUBKEY1');
     expect(user_entry).toBeDefined();
     expect(user_entry?.user_id).toEqual('GPUBKEY1');
     expect(user_entry?.health_factor).toEqual(2);
@@ -43,6 +43,7 @@ describe('updateUser', () => {
 
   it('deletes existing user without liabilities', async () => {
     let user_entry: UserEntry = {
+      pool_id: mockPool.id,
       user_id: 'GPUBKEY1',
       health_factor: 2,
       collateral: new Map([[mockPool.metadata.reserveList[3], BigInt(789)]]),
@@ -62,7 +63,7 @@ describe('updateUser', () => {
     );
     updateUser(db, mockPool, user, user_estimate);
 
-    let new_user_entry = db.getUserEntry('GPUBKEY1');
+    let new_user_entry = db.getUserEntry(mockPool.id, 'GPUBKEY1');
     expect(new_user_entry).toBeUndefined();
   });
 });

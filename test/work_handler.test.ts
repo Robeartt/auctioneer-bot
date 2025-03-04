@@ -1,4 +1,4 @@
-import { PoolOracle } from '@blend-capital/blend-sdk';
+import { PoolOracle, Version } from '@blend-capital/blend-sdk';
 import { AppEvent, EventType, OracleScanEvent } from '../src/events';
 import { checkUsersForLiquidationsAndBadDebt } from '../src/liquidations';
 import { OracleHistory } from '../src/oracle_history';
@@ -6,6 +6,7 @@ import { AuctioneerDatabase, UserEntry } from '../src/utils/db';
 import { SorobanHelper } from '../src/utils/soroban_helper';
 import { WorkHandler } from '../src/work_handler';
 import { WorkSubmission, WorkSubmissionType, WorkSubmitter } from '../src/work_submitter';
+import { PoolConfig } from '../src/utils/config';
 
 jest.mock('../src/utils/prices');
 jest.mock('../src/liquidations');
@@ -46,11 +47,22 @@ describe('WorkHandler', () => {
   });
 
   it('should handle ORACLE_SCAN event', async () => {
-    const appEvent: AppEvent = { type: EventType.ORACLE_SCAN } as OracleScanEvent;
+    const poolConfig: PoolConfig = {
+      poolAddress: 'pool1',
+      backstopAddress: 'backstop1',
+      primaryAsset: 'asset1',
+      minPrimaryCollateral: 123n,
+      version: Version.V1,
+    };
+    const appEvent: AppEvent = {
+      type: EventType.ORACLE_SCAN,
+      poolConfig,
+    } as OracleScanEvent;
     const poolOracle = new PoolOracle('', new Map(), 7, 0);
     const priceChanges = { up: ['asset1'], down: ['asset2'] };
     const usersWithLiability: UserEntry[] = [
       {
+        pool_id: 'pool1',
         user_id: 'user1',
         health_factor: 0,
         collateral: new Map([['asset2', BigInt(100)]]),
@@ -60,6 +72,7 @@ describe('WorkHandler', () => {
     ];
     const usersWithCollateral: UserEntry[] = [
       {
+        pool_id: 'pool1',
         user_id: 'user1',
         health_factor: 0,
         collateral: new Map([['asset2', BigInt(100)]]),
@@ -69,6 +82,13 @@ describe('WorkHandler', () => {
     ];
     const liquidations: WorkSubmission[] = [
       {
+        poolConfig: {
+          poolAddress: 'pool1',
+          backstopAddress: 'backstop1',
+          primaryAsset: 'asset1',
+          minPrimaryCollateral: 123n,
+          version: Version.V1,
+        },
         user: 'user1',
         type: WorkSubmissionType.LiquidateUser,
         liquidationPercent: 10n,
@@ -86,11 +106,14 @@ describe('WorkHandler', () => {
 
     expect(sorobanHelper.loadPoolOracle).toHaveBeenCalled();
     expect(oracleHistory.getSignificantPriceChanges).toHaveBeenCalledWith(poolOracle);
-    expect(db.getUserEntriesWithLiability).toHaveBeenCalledWith('asset1');
-    expect(db.getUserEntriesWithCollateral).toHaveBeenCalledWith('asset2');
-    expect(checkUsersForLiquidationsAndBadDebt).toHaveBeenCalledWith(db, sorobanHelper, [
-      usersWithCollateral[0].user_id,
-    ]);
+    expect(db.getUserEntriesWithLiability).toHaveBeenCalledWith(poolConfig.poolAddress, 'asset1');
+    expect(db.getUserEntriesWithCollateral).toHaveBeenCalledWith(poolConfig.poolAddress, 'asset2');
+    expect(checkUsersForLiquidationsAndBadDebt).toHaveBeenCalledWith(
+      db,
+      sorobanHelper,
+      poolConfig,
+      [usersWithCollateral[0].user_id]
+    );
     expect(submissionQueue.addSubmission).toHaveBeenCalledWith(liquidations[0], 3);
   });
 });

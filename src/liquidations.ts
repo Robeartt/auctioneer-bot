@@ -1,10 +1,11 @@
 import { PositionsEstimate } from '@blend-capital/blend-sdk';
 import { updateUser } from './user.js';
-import { APP_CONFIG } from './utils/config.js';
+import { PoolConfig } from './utils/config.js';
 import { AuctioneerDatabase, AuctionType } from './utils/db.js';
 import { logger } from './utils/logger.js';
 import { SorobanHelper } from './utils/soroban_helper.js';
 import { WorkSubmission, WorkSubmissionType } from './work_submitter.js';
+import { sendSlackNotification } from './utils/slack_notifier.js';
 
 /**
  * Check if a user is liquidatable
@@ -62,12 +63,15 @@ export function calculateLiquidationPercent(user: PositionsEstimate): bigint {
  */
 export async function scanUsers(
   db: AuctioneerDatabase,
-  sorobanHelper: SorobanHelper
+  sorobanHelper: SorobanHelper,
+  poolConfig: PoolConfig
 ): Promise<WorkSubmission[]> {
-  let users = db.getUserEntriesUnderHealthFactor(1.2).map((user) => user.user_id);
-  users.push(APP_CONFIG.backstopAddress);
+  let users = db
+    .getUserEntriesUnderHealthFactor(poolConfig.poolAddress, 1.2)
+    .map((user) => user.user_id);
+  users.push(poolConfig.backstopAddress);
 
-  return checkUsersForLiquidationsAndBadDebt(db, sorobanHelper, users);
+  return checkUsersForLiquidationsAndBadDebt(db, sorobanHelper, poolConfig, users);
 }
 
 /**
@@ -80,57 +84,71 @@ export async function scanUsers(
 export async function checkUsersForLiquidationsAndBadDebt(
   db: AuctioneerDatabase,
   sorobanHelper: SorobanHelper,
+  poolConfig: PoolConfig,
   user_ids: string[]
 ): Promise<WorkSubmission[]> {
-  const pool = await sorobanHelper.loadPool();
+  const pool = await sorobanHelper.loadPool(poolConfig);
   logger.info(`Checking ${user_ids.length} users for liquidations..`);
   let submissions: WorkSubmission[] = [];
   for (let user of user_ids) {
-    // Check if the user already has a liquidation auction
-    if (user === APP_CONFIG.backstopAddress) {
-      const { estimate: backstopPostionsEstimate, user: backstop } =
-        await sorobanHelper.loadUserPositionEstimate(user);
-      if (
-        isBadDebt(backstopPostionsEstimate) &&
-        (await sorobanHelper.loadAuction(user, AuctionType.BadDebt)) === undefined
+    try {
+      // Check if the user already has a liquidation auction
+      if (user === poolConfig.backstopAddress) {
+        const { estimate: backstopPostionsEstimate, user: backstop } =
+          await sorobanHelper.loadUserPositionEstimate(poolConfig, user);
+        if (
+          isBadDebt(backstopPostionsEstimate) &&
+          (await sorobanHelper.loadAuction(poolConfig, user, AuctionType.BadDebt)) === undefined
+        ) {
+          const lot = Array.from(backstop.positions.collateral.keys()).map(
+            (index) => pool.metadata.reserveList[index]
+          );
+          const bid = Array.from(backstop.positions.liabilities.keys()).map(
+            (index) => pool.metadata.reserveList[index]
+          );
+          submissions.push({
+            type: WorkSubmissionType.BadDebtAuction,
+            poolConfig,
+            bid,
+            lot,
+          });
+        }
+      } else if (
+        (await sorobanHelper.loadAuction(poolConfig, user, AuctionType.Liquidation)) === undefined
       ) {
-        const lot = Array.from(backstop.positions.collateral.keys()).map(
-          (index) => pool.metadata.reserveList[index]
-        );
-        const bid = Array.from(backstop.positions.liabilities.keys()).map(
-          (index) => pool.metadata.reserveList[index]
-        );
-        submissions.push({
-          type: WorkSubmissionType.BadDebtAuction,
-          bid,
-          lot,
-        });
+        const { estimate: poolUserEstimate, user: poolUser } =
+          await sorobanHelper.loadUserPositionEstimate(poolConfig, user);
+        updateUser(db, pool, poolUser, poolUserEstimate);
+        if (isLiquidatable(poolUserEstimate)) {
+          const lot = Array.from(poolUser.positions.collateral.keys()).map(
+            (index) => pool.metadata.reserveList[index]
+          );
+          const bid = Array.from(poolUser.positions.liabilities.keys()).map(
+            (index) => pool.metadata.reserveList[index]
+          );
+          const liquidationPercent = calculateLiquidationPercent(poolUserEstimate);
+          submissions.push({
+            type: WorkSubmissionType.LiquidateUser,
+            poolConfig,
+            user: user,
+            liquidationPercent: liquidationPercent,
+            bid,
+            lot,
+          });
+        } else if (isBadDebt(poolUserEstimate)) {
+          submissions.push({
+            type: WorkSubmissionType.BadDebtTransfer,
+            poolConfig,
+            user: user,
+          });
+        }
       }
-    } else if ((await sorobanHelper.loadAuction(user, AuctionType.Liquidation)) === undefined) {
-      const { estimate: poolUserEstimate, user: poolUser } =
-        await sorobanHelper.loadUserPositionEstimate(user);
-      updateUser(db, pool, poolUser, poolUserEstimate);
-      if (isLiquidatable(poolUserEstimate)) {
-        const lot = Array.from(poolUser.positions.collateral.keys()).map(
-          (index) => pool.metadata.reserveList[index]
-        );
-        const bid = Array.from(poolUser.positions.liabilities.keys()).map(
-          (index) => pool.metadata.reserveList[index]
-        );
-        const liquidationPercent = calculateLiquidationPercent(poolUserEstimate);
-        submissions.push({
-          type: WorkSubmissionType.LiquidateUser,
-          user: user,
-          liquidationPercent: liquidationPercent,
-          bid,
-          lot,
-        });
-      } else if (isBadDebt(poolUserEstimate)) {
-        submissions.push({
-          type: WorkSubmissionType.BadDebtTransfer,
-          user: user,
-        });
-      }
+    } catch (e) {
+      logger.error(`Error checking user ${user} for bad debt or liquidation: ${e}`);
+      sendSlackNotification(
+        poolConfig.poolAddress,
+        `Error checking user ${user} for bad debt or liquidation: ${e}`
+      );
     }
   }
   return submissions;

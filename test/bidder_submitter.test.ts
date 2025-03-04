@@ -1,4 +1,11 @@
-import { Auction, PoolUser, Positions, Request, RequestType } from '@blend-capital/blend-sdk';
+import {
+  Auction,
+  PoolUser,
+  Positions,
+  Request,
+  RequestType,
+  Version,
+} from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import { AuctionFill, calculateAuctionFill } from '../src/auction';
 import {
@@ -8,7 +15,7 @@ import {
   FillerUnwind,
 } from '../src/bidder_submitter';
 import { getFillerAvailableBalances, managePositions } from '../src/filler';
-import { Filler } from '../src/utils/config';
+import { Filler, PoolConfig } from '../src/utils/config';
 import { AuctioneerDatabase, AuctionEntry, AuctionType, FilledAuctionEntry } from '../src/utils/db';
 import { logger } from '../src/utils/logger';
 import { sendSlackNotification } from '../src/utils/slack_notifier';
@@ -40,8 +47,6 @@ jest.mock('../src/utils/config.js', () => {
     APP_CONFIG: {
       rpcURL: 'http://localhost:8000/rpc',
       networkPassphrase: 'Public Global Stellar Network ; September 2015',
-      poolAddress: 'CBP7NO6F7FRDHSOFQBT2L2UWYIZ2PU76JKVRYAQTG3KZSQLYAOKIF2WB',
-      backstopAddress: 'CAO3AGAMZVRMHITL36EJ2VZQWKYRPWMQAPDQD5YEOF3GIF7T44U4JAL3',
       backstopTokenAddress: 'CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM',
       usdcAddress: 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75',
       blndAddress: 'CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY',
@@ -81,6 +86,14 @@ describe('BidderSubmitter', () => {
   const mockedGetFilledAvailableBalances = getFillerAvailableBalances as jest.MockedFunction<
     typeof getFillerAvailableBalances
   >;
+
+  let poolConfig: PoolConfig = {
+    poolAddress: mockPool.id,
+    backstopAddress: mockPool.metadata.backstop,
+    primaryAsset: 'USD',
+    minPrimaryCollateral: 123n,
+    version: Version.V1,
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -123,16 +136,16 @@ describe('BidderSubmitter', () => {
       keypair: Keypair.random(),
       defaultProfitPct: 0,
       minHealthFactor: 0,
-      primaryAsset: 'USD',
-      minPrimaryCollateral: 0n,
       forceFill: false,
       supportedBid: [],
       supportedLot: [],
     };
     const submission: AuctionBid = {
       type: BidderSubmissionType.BID,
+      poolConfig,
       filler,
       auctionEntry: {
+        pool_id: poolConfig.poolAddress,
         user_id: auction.user,
         auction_type: AuctionType.Liquidation,
         filler: filler.keypair.publicKey(),
@@ -145,6 +158,7 @@ describe('BidderSubmitter', () => {
 
     const expectedFillEntry: FilledAuctionEntry = {
       tx_hash: 'mock-tx-hash',
+      pool_id: poolConfig.poolAddress,
       filler: submission.auctionEntry.filler,
       user_id: auction.user,
       auction_type: submission.auctionEntry.auction_type,
@@ -158,13 +172,14 @@ describe('BidderSubmitter', () => {
     };
     expect(result).toBe(true);
     expect(mockedSorobanHelper.loadAuction).toHaveBeenCalledWith(
+      poolConfig,
       submission.auctionEntry.user_id,
       submission.auctionEntry.auction_type
     );
     expect(mockedSorobanHelper.submitTransaction).toHaveBeenCalled();
     expect(mockDb.setFilledAuctionEntry).toHaveBeenCalledWith(expectedFillEntry);
     expect(bidderSubmitter.addSubmission).toHaveBeenCalledWith(
-      { type: BidderSubmissionType.UNWIND, filler: submission.filler },
+      { type: BidderSubmissionType.UNWIND, filler: submission.filler, poolConfig },
       2
     );
   });
@@ -175,13 +190,12 @@ describe('BidderSubmitter', () => {
     mockedSorobanHelperConstructor.mockReturnValue(mockedSorobanHelper);
     const submission: AuctionBid = {
       type: BidderSubmissionType.BID,
+      poolConfig,
       filler: {
         name: 'test-filler',
         keypair: Keypair.random(),
         defaultProfitPct: 0,
         minHealthFactor: 0,
-        primaryAsset: 'USD',
-        minPrimaryCollateral: 0n,
         forceFill: false,
         supportedBid: [],
         supportedLot: [],
@@ -219,13 +233,12 @@ describe('BidderSubmitter', () => {
 
     const submission: FillerUnwind = {
       type: BidderSubmissionType.UNWIND,
+      poolConfig,
       filler: {
         name: 'test-filler',
         keypair: Keypair.random(),
         defaultProfitPct: 0,
         minHealthFactor: 0,
-        primaryAsset: 'USD',
-        minPrimaryCollateral: 100n,
         forceFill: false,
         supportedBid: ['USD', 'XLM'],
         supportedLot: ['EURC', 'XLM'],
@@ -260,13 +273,12 @@ describe('BidderSubmitter', () => {
 
     const submission: FillerUnwind = {
       type: BidderSubmissionType.UNWIND,
+      poolConfig,
       filler: {
         name: 'test-filler',
         keypair: Keypair.random(),
         defaultProfitPct: 0,
         minHealthFactor: 0,
-        primaryAsset: 'USD',
-        minPrimaryCollateral: 100n,
         forceFill: false,
         supportedBid: ['USD', 'XLM'],
         supportedLot: ['EURC', 'XLM'],
@@ -315,13 +327,12 @@ describe('BidderSubmitter', () => {
   it('should handle dropped bid', async () => {
     const submission: AuctionBid = {
       type: BidderSubmissionType.BID,
+      poolConfig,
       filler: {
         name: 'test-filler',
         keypair: Keypair.random(),
         defaultProfitPct: 0,
         minHealthFactor: 0,
-        primaryAsset: 'USD',
-        minPrimaryCollateral: 0n,
         forceFill: false,
         supportedBid: [],
         supportedLot: [],
@@ -346,6 +357,7 @@ describe('BidderSubmitter', () => {
         `Filler: ${submission.filler.name}\n`
     );
     expect(mockedSendSlackNotif).toHaveBeenCalledWith(
+      poolConfig.poolAddress,
       `Dropped auction bid\n` +
         `Type: ${AuctionType[submission.auctionEntry.auction_type]}\n` +
         `User: ${submission.auctionEntry.user_id}\n` +
@@ -358,13 +370,12 @@ describe('BidderSubmitter', () => {
   it('should handle dropped unwind', async () => {
     const submission: FillerUnwind = {
       type: BidderSubmissionType.UNWIND,
+      poolConfig,
       filler: {
         name: 'test-filler',
         keypair: Keypair.random(),
         defaultProfitPct: 0,
         minHealthFactor: 0,
-        primaryAsset: 'USD',
-        minPrimaryCollateral: 0n,
         forceFill: false,
         supportedBid: [],
         supportedLot: [],
@@ -377,6 +388,7 @@ describe('BidderSubmitter', () => {
       `Dropped filler unwind\n` + `Filler: ${submission.filler.name}\n`
     );
     expect(mockedSendSlackNotif).toHaveBeenCalledWith(
+      poolConfig.poolAddress,
       `Dropped filler unwind\n` + `Filler: ${submission.filler.name}\n`
     );
   });

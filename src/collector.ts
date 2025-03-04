@@ -15,6 +15,8 @@ import { AuctioneerDatabase } from './utils/db.js';
 import { stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
 import { sendEvent } from './utils/messages.js';
+import { PoolConfig } from './utils/config.js';
+import { Api } from '@stellar/stellar-sdk/rpc';
 
 let startup_ledger = 0;
 
@@ -23,7 +25,7 @@ export async function runCollector(
   bidder: ChildProcess,
   db: AuctioneerDatabase,
   stellarRpc: rpc.Server,
-  poolAddress: string,
+  poolConfigs: PoolConfig[],
   poolEventHandler: PoolEventHandler
 ) {
   const timer = Date.now();
@@ -34,13 +36,6 @@ export async function runCollector(
   const latestLedger = (await stellarRpc.getLatestLedger()).sequence;
   if (latestLedger > statusEntry.latest_ledger) {
     logger.info(`Processing ledger ${latestLedger}`);
-    // new ledger detected
-    const ledger_event: LedgerEvent = {
-      type: EventType.LEDGER,
-      timestamp: Date.now(),
-      ledger: latestLedger,
-    };
-    sendEvent(bidder, ledger_event);
 
     // determine ledgers since bot was started to send long running work events
     // this staggers the events from different bots running on the same pool
@@ -48,8 +43,6 @@ export async function runCollector(
       startup_ledger = latestLedger;
     }
     const ledgersProcessed = latestLedger - startup_ledger;
-
-    // send long running work events to worker
     if (ledgersProcessed % 10 === 0) {
       // approx every minute
       const event: PriceUpdateEvent = {
@@ -58,35 +51,49 @@ export async function runCollector(
       };
       sendEvent(worker, event);
     }
-    if (ledgersProcessed % 60 === 0) {
-      // approx every 5m
-      // send an oracle scan event
-      const event: OracleScanEvent = {
-        type: EventType.ORACLE_SCAN,
-        timestamp: Date.now(),
-      };
-      sendEvent(worker, event);
-    }
-    if (ledgersProcessed % 1203 === 0) {
-      // approx every 2hr
-      // send a user update event to update any users that have not been updated in ~2 weeks
-      const event: UserRefreshEvent = {
-        type: EventType.USER_REFRESH,
-        timestamp: Date.now(),
-        cutoff: Math.max(latestLedger - 14 * 17280, 0),
-      };
-      sendEvent(worker, event);
-    }
-    if (ledgersProcessed % 1207 === 0) {
-      // approx every 2hr
-      // send a liq scan event
-      const event: LiqScanEvent = {
-        type: EventType.LIQ_SCAN,
-        timestamp: Date.now(),
-      };
-      sendEvent(worker, event);
-    }
 
+    for (const poolConfig of poolConfigs) {
+      // new ledger detected
+      const ledger_event: LedgerEvent = {
+        type: EventType.LEDGER,
+        timestamp: Date.now(),
+        ledger: latestLedger,
+        poolConfig,
+      };
+      sendEvent(bidder, ledger_event);
+      // send long running work events to worker
+      if (ledgersProcessed % 60 === 0) {
+        // approx every 5m
+        // send an oracle scan event
+        const event: OracleScanEvent = {
+          type: EventType.ORACLE_SCAN,
+          timestamp: Date.now(),
+          poolConfig,
+        };
+        sendEvent(worker, event);
+      }
+      if (ledgersProcessed % 1203 === 0) {
+        // approx every 2hr
+        // send a user update event to update any users that have not been updated in ~2 weeks
+        const event: UserRefreshEvent = {
+          type: EventType.USER_REFRESH,
+          timestamp: Date.now(),
+          cutoff: Math.max(latestLedger - 14 * 17280, 0),
+          poolConfig,
+        };
+        sendEvent(worker, event);
+      }
+      if (ledgersProcessed % 1207 === 0) {
+        // approx every 2hr
+        // send a liq scan event
+        const event: LiqScanEvent = {
+          type: EventType.LIQ_SCAN,
+          timestamp: Date.now(),
+          poolConfig,
+        };
+        sendEvent(worker, event);
+      }
+    }
     // fetch events from last ledger and paging token
     // start from the ledger after the last one we processed
     let start_ledger =
@@ -94,15 +101,11 @@ export async function runCollector(
     // if we are too far behind, start from 17270 ledgers ago (default max ledger history is 17280)
     start_ledger = Math.max(start_ledger, latestLedger - 17270);
     let events: rpc.Api.RawGetEventsResponse;
+    const filters = createFilter(poolConfigs);
     try {
       events = await stellarRpc._getEvents({
         startLedger: start_ledger,
-        filters: [
-          {
-            type: 'contract',
-            contractIds: [poolAddress],
-          },
-        ],
+        filters: filters,
         limit: 100,
       });
     } catch (e: any) {
@@ -114,12 +117,7 @@ export async function runCollector(
         );
         events = await stellarRpc._getEvents({
           startLedger: latestLedger,
-          filters: [
-            {
-              type: 'contract',
-              contractIds: [poolAddress],
-            },
-          ],
+          filters: filters,
           limit: 100,
         });
       } else {
@@ -132,10 +130,18 @@ export async function runCollector(
         let blendPoolEvent = poolEventFromEventResponse(raw_event);
         if (blendPoolEvent) {
           // handle pool events immediately
+          let poolConfig = poolConfigs.find(
+            (config) => config.poolAddress === blendPoolEvent.contractId
+          );
+          if (!poolConfig) {
+            logger.error(`Pool config not found for event: ${stringify(blendPoolEvent)}`);
+            continue;
+          }
           let poolEvent: PoolEventEvent = {
             type: EventType.POOL_EVENT,
             timestamp: Date.now(),
             event: blendPoolEvent,
+            poolConfig,
           };
           logger.info(`Processing pool event: ${stringify(poolEvent)}`);
           await poolEventHandler.processEventWithRetryAndDeadLetter(poolEvent);
@@ -144,12 +150,7 @@ export async function runCollector(
       cursor = events.events[events.events.length - 1].pagingToken;
       events = await stellarRpc._getEvents({
         cursor: cursor,
-        filters: [
-          {
-            type: 'contract',
-            contractIds: [poolAddress],
-          },
-        ],
+        filters: filters,
         limit: 100,
       });
     }
@@ -159,4 +160,16 @@ export async function runCollector(
     db.setStatusEntry(statusEntry);
     logger.info(`Processed ledger ${latestLedger} in ${Date.now() - timer}ms`);
   }
+}
+
+function createFilter(poolConfigs: PoolConfig[]) {
+  let pools = poolConfigs.map((poolConfig) => poolConfig.poolAddress);
+  let filter: Api.EventFilter[] = [];
+  for (let i = 0; i < pools.length; i += 5) {
+    filter.push({
+      type: 'contract',
+      contractIds: pools.slice(i, i + 5),
+    });
+  }
+  return filter;
 }

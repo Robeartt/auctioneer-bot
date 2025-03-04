@@ -1,11 +1,18 @@
-import { Auction, ContractError, ContractErrorType } from '@blend-capital/blend-sdk';
+import {
+  Auction,
+  ContractError,
+  ContractErrorType,
+  FixedMath,
+  Version,
+} from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
-import { AppConfig } from '../src/utils/config';
+import { AppConfig, PoolConfig } from '../src/utils/config';
 import { AuctionType } from '../src/utils/db';
 import { logger } from '../src/utils/logger';
 import { sendSlackNotification } from '../src/utils/slack_notifier';
 import { SorobanHelper } from '../src/utils/soroban_helper';
 import { WorkSubmission, WorkSubmissionType, WorkSubmitter } from '../src/work_submitter';
+import { mockPool, USDC } from './helpers/mocks';
 
 // Mock dependencies
 jest.mock('../src/utils/db');
@@ -20,9 +27,7 @@ jest.mock('../src/utils/logger.js', () => ({
   },
 }));
 jest.mock('../src/utils/config.js', () => {
-  let config: AppConfig = {
-    poolAddress: 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC',
-  } as AppConfig;
+  let config: AppConfig = {} as AppConfig;
   return {
     APP_CONFIG: config,
   };
@@ -36,7 +41,13 @@ describe('WorkSubmitter', () => {
   const mockedSendSlackNotif = sendSlackNotification as jest.MockedFunction<
     typeof sendSlackNotification
   >;
-
+  const poolConfig: PoolConfig = {
+    poolAddress: mockPool.id,
+    backstopAddress: mockPool.metadata.backstop,
+    version: Version.V1,
+    minPrimaryCollateral: FixedMath.toFixed(100, 7),
+    primaryAsset: USDC,
+  };
   beforeEach(() => {
     jest.resetAllMocks();
     workSubmitter = new WorkSubmitter();
@@ -48,6 +59,7 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolConfig,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
       lot: [],
@@ -57,6 +69,7 @@ describe('WorkSubmitter', () => {
     const result = await workSubmitter.submit(submission);
     expect(result).toBe(true);
     expect(mockedSorobanHelper.loadAuction).toHaveBeenCalledWith(
+      poolConfig,
       submission.user,
       AuctionType.Liquidation
     );
@@ -75,6 +88,7 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolConfig,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
       lot: [],
@@ -96,6 +110,7 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolConfig,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
       lot: [],
@@ -117,6 +132,7 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolConfig,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(100),
       lot: [],
@@ -138,6 +154,7 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolConfig,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
       lot: [],
@@ -159,6 +176,7 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolConfig,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(1),
       lot: [],
@@ -180,6 +198,7 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolConfig,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
       lot: [],
@@ -201,6 +220,7 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolConfig,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
       lot: [],
@@ -221,6 +241,7 @@ describe('WorkSubmitter', () => {
   it('should submit a bad debt transfer successfully', async () => {
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtTransfer,
+      poolConfig,
       user: Keypair.random().publicKey(),
     };
 
@@ -236,6 +257,7 @@ describe('WorkSubmitter', () => {
 
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtAuction,
+      poolConfig,
       lot: [],
       bid: [],
     };
@@ -258,6 +280,7 @@ describe('WorkSubmitter', () => {
 
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtAuction,
+      poolConfig,
       lot: [],
       bid: [],
     };
@@ -271,6 +294,7 @@ describe('WorkSubmitter', () => {
   it('should log an error when a liquidation is dropped', () => {
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolConfig,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
       lot: [],
@@ -286,6 +310,7 @@ describe('WorkSubmitter', () => {
   it('should log an error when a bad debt transfer is dropped', () => {
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtTransfer,
+      poolConfig,
       user: Keypair.random().publicKey(),
     };
 
@@ -299,6 +324,7 @@ describe('WorkSubmitter', () => {
   it('should log an error when a bad debt auction is dropped', () => {
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtAuction,
+      poolConfig,
       lot: [],
       bid: [],
     };

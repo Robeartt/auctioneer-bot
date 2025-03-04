@@ -6,11 +6,12 @@ import {
   PoolUser,
   PositionsEstimate,
   Request,
+  Version,
 } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import { calculateAuctionFill, valueBackstopTokenInUSDC } from '../src/auction.js';
 import { getFillerAvailableBalances, getFillerProfitPct } from '../src/filler.js';
-import { Filler } from '../src/utils/config.js';
+import { Filler, PoolConfig } from '../src/utils/config.js';
 import { AuctioneerDatabase } from '../src/utils/db.js';
 import { SorobanHelper } from '../src/utils/soroban_helper.js';
 import {
@@ -67,8 +68,6 @@ describe('auctions', () => {
       keypair: Keypair.random(),
       defaultProfitPct: 0.1,
       minHealthFactor: 1.2,
-      primaryAsset: USDC,
-      minPrimaryCollateral: 0n,
       forceFill: true,
       supportedBid: [],
       supportedLot: [],
@@ -91,15 +90,23 @@ describe('auctions', () => {
       estimate: positionEstimate,
       user: {} as PoolUser,
     });
-    mockedSorobanHelper.simLPTokenToUSDC.mockImplementation((number: bigint) => {
-      // 0.5 USDC per LP token
-      return Promise.resolve((number * 5000000n) / 10000000n);
-    });
+    mockedSorobanHelper.simLPTokenToUSDC.mockImplementation(
+      (backstopId: string, number: bigint) => {
+        // 0.5 USDC per LP token
+        return Promise.resolve((number * 5000000n) / 10000000n);
+      }
+    );
   });
 
   describe('calcAuctionFill', () => {
     // *** Interest Auctions ***
-
+    const poolConfig: PoolConfig = {
+      poolAddress: mockPool.id,
+      backstopAddress: mockPool.metadata.backstop,
+      version: Version.V1,
+      minPrimaryCollateral: 123n,
+      primaryAsset: USDC,
+    };
     it('calcs fill for interest auction', async () => {
       let nextLedger = MOCK_LEDGER + 1;
       let auction = new Auction(BACKSTOP, AuctionType.Interest, {
@@ -118,7 +125,14 @@ describe('auctions', () => {
         new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(1000)]])
       );
 
-      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+      let fill = await calculateAuctionFill(
+        poolConfig,
+        filler,
+        auction,
+        nextLedger,
+        mockedSorobanHelper,
+        db
+      );
 
       let expectedRequests: Request[] = [
         {
@@ -158,7 +172,14 @@ describe('auctions', () => {
         new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(400)]])
       );
 
-      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+      let fill = await calculateAuctionFill(
+        poolConfig,
+        filler,
+        auction,
+        nextLedger,
+        mockedSorobanHelper,
+        db
+      );
 
       let expectedRequests: Request[] = [
         {
@@ -192,7 +213,14 @@ describe('auctions', () => {
         new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(1000)]])
       );
 
-      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+      let fill = await calculateAuctionFill(
+        poolConfig,
+        filler,
+        auction,
+        nextLedger,
+        mockedSorobanHelper,
+        db
+      );
 
       let expectedRequests: Request[] = [
         {
@@ -234,7 +262,14 @@ describe('auctions', () => {
         new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(1000)]])
       );
 
-      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+      let fill = await calculateAuctionFill(
+        poolConfig,
+        filler,
+        auction,
+        nextLedger,
+        mockedSorobanHelper,
+        db
+      );
 
       let expectedRequests: Request[] = [
         {
@@ -270,6 +305,7 @@ describe('auctions', () => {
 
       filler.forceFill = true;
       let fill_force = await calculateAuctionFill(
+        poolConfig,
         filler,
         auction,
         nextLedger,
@@ -279,6 +315,7 @@ describe('auctions', () => {
 
       filler.forceFill = false;
       let fill_no_force = await calculateAuctionFill(
+        poolConfig,
         filler,
         auction,
         nextLedger,
@@ -331,7 +368,14 @@ describe('auctions', () => {
         new Map<string, bigint>([[USDC, FixedMath.toFixed(100)]])
       );
 
-      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+      let fill = await calculateAuctionFill(
+        poolConfig,
+        filler,
+        auction,
+        nextLedger,
+        mockedSorobanHelper,
+        db
+      );
 
       let expectedRequests: Request[] = [
         {
@@ -380,7 +424,14 @@ describe('auctions', () => {
         ])
       );
 
-      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+      let fill = await calculateAuctionFill(
+        poolConfig,
+        filler,
+        auction,
+        nextLedger,
+        mockedSorobanHelper,
+        db
+      );
 
       let expectedRequests: Request[] = [
         {
@@ -432,8 +483,14 @@ describe('auctions', () => {
         ])
       );
 
-      filler.primaryAsset = USDC;
-      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+      let fill = await calculateAuctionFill(
+        poolConfig,
+        filler,
+        auction,
+        nextLedger,
+        mockedSorobanHelper,
+        db
+      );
 
       let expectedRequests: Request[] = [
         {
@@ -479,8 +536,14 @@ describe('auctions', () => {
       mockedGetFillerProfitPct.mockReturnValue(0.1);
       mockedGetFilledAvailableBalances.mockResolvedValue(new Map<string, bigint>([]));
 
-      filler.primaryAsset = USDC;
-      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+      let fill = await calculateAuctionFill(
+        poolConfig,
+        filler,
+        auction,
+        nextLedger,
+        mockedSorobanHelper,
+        db
+      );
 
       let expectedRequests: Request[] = [
         {
@@ -514,8 +577,14 @@ describe('auctions', () => {
       mockedGetFillerProfitPct.mockReturnValue(0.1);
       mockedGetFilledAvailableBalances.mockResolvedValue(new Map<string, bigint>([]));
 
-      filler.primaryAsset = USDC;
-      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+      let fill = await calculateAuctionFill(
+        poolConfig,
+        filler,
+        auction,
+        nextLedger,
+        mockedSorobanHelper,
+        db
+      );
 
       let expectedRequests: Request[] = [
         {
@@ -554,8 +623,14 @@ describe('auctions', () => {
         ])
       );
 
-      filler.primaryAsset = USDC;
-      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+      let fill = await calculateAuctionFill(
+        poolConfig,
+        filler,
+        auction,
+        nextLedger,
+        mockedSorobanHelper,
+        db
+      );
 
       let expectedRequests: Request[] = [
         {
@@ -607,8 +682,14 @@ describe('auctions', () => {
         ])
       );
 
-      filler.primaryAsset = USDC;
-      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+      let fill = await calculateAuctionFill(
+        poolConfig,
+        filler,
+        auction,
+        nextLedger,
+        mockedSorobanHelper,
+        db
+      );
 
       let expectedRequests: Request[] = [
         {
@@ -667,7 +748,14 @@ describe('auctions', () => {
         ])
       );
 
-      let fill = await calculateAuctionFill(filler, auction, nextLedger, mockedSorobanHelper, db);
+      let fill = await calculateAuctionFill(
+        poolConfig,
+        filler,
+        auction,
+        nextLedger,
+        mockedSorobanHelper,
+        db
+      );
 
       let expectedRequests: Request[] = [
         {
@@ -708,7 +796,11 @@ describe('auctions', () => {
         lpTokenPrice: 1.25,
       } as BackstopToken);
 
-      let value = await valueBackstopTokenInUSDC(mockedSorobanHelper, FixedMath.toFixed(2));
+      let value = await valueBackstopTokenInUSDC(
+        mockedSorobanHelper,
+        'backstop',
+        FixedMath.toFixed(2)
+      );
 
       expect(value).toEqual(lpTokenToUSDC);
       expect(mockedSorobanHelper.loadBackstopToken).toHaveBeenCalledTimes(0);
@@ -720,7 +812,11 @@ describe('auctions', () => {
         lpTokenPrice: 1.25,
       } as BackstopToken);
 
-      let value = await valueBackstopTokenInUSDC(mockedSorobanHelper, FixedMath.toFixed(2));
+      let value = await valueBackstopTokenInUSDC(
+        mockedSorobanHelper,
+        'backstop',
+        FixedMath.toFixed(2)
+      );
 
       expect(value).toEqual(1.25 * 2);
       expect(mockedSorobanHelper.loadBackstopToken).toHaveBeenCalledTimes(1);

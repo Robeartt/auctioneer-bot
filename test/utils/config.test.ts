@@ -1,13 +1,14 @@
 // config.test.ts
 import { Keypair } from '@stellar/stellar-sdk';
 import {
+  AppConfig,
   validateAppConfig,
   validateAuctionProfit,
   validateFiller,
+  validatePoolConfig,
   validatePriceSource,
   validateVersion,
 } from '../../src/utils/config';
-import { version } from 'winston';
 
 describe('validateAppConfig', () => {
   it('should return false for non-object config', () => {
@@ -20,12 +21,12 @@ describe('validateAppConfig', () => {
       name: 'App',
       rpcURL: 'http://localhost',
       networkPassphrase: 'Test',
-      poolAddress: 'pool',
       backstopAddress: 'backstop',
       backstopTokenAddress: 'token',
       usdcAddress: 'usdc',
       blndAddress: 'blnd',
       keypair: 'secret',
+      poolConfigs: [],
       fillers: [],
       priceSources: [],
       version: 'V1',
@@ -39,21 +40,25 @@ describe('validateAppConfig', () => {
       name: 'App',
       rpcURL: 'http://localhost',
       networkPassphrase: 'Test',
-      poolAddress: 'pool',
-      backstopAddress: 'backstop',
       backstopTokenAddress: 'token',
       usdcAddress: 'usdc',
       blndAddress: 'blnd',
       keypair: Keypair.random().secret(),
-      version: 'V1',
+      poolConfigs: [
+        {
+          poolAddress: 'pool',
+          backstopAddress: 'backstop',
+          version: 'V1',
+          primaryAsset: 'asset',
+          minPrimaryCollateral: '100',
+        },
+      ],
       fillers: [
         {
           name: 'filler',
           keypair: Keypair.random().secret(),
           defaultProfitPct: 1,
           minHealthFactor: 1,
-          primaryAsset: 'asset',
-          minPrimaryCollateral: '100',
           forceFill: true,
           supportedBid: ['bid'],
           supportedLot: ['lot'],
@@ -189,5 +194,34 @@ describe('validateVersion', () => {
   it('should return true for valid version', () => {
     expect(validateVersion('V1')).toBe(true);
     expect(validateVersion('V2')).toBe(true);
+  });
+});
+
+describe('validatePoolConfig', () => {
+  it('should return false for non-object config', () => {
+    expect(validatePoolConfig(null)).toBe(false);
+    expect(validatePoolConfig('string')).toBe(false);
+  });
+
+  it('should return false for config with missing or incorrect properties', () => {
+    const invalidConfig = {
+      poolAddress: 'pool',
+      backstopAddress: 'backstop',
+      version: 'V1',
+      primaryAsset: 'asset',
+      minPrimaryCollateral: 100, // Invalid type
+    };
+    expect(validatePoolConfig(invalidConfig)).toBe(false);
+  });
+
+  it('should return true for valid config', () => {
+    const validConfig = {
+      poolAddress: 'pool',
+      backstopAddress: 'backstop',
+      version: 'V1',
+      primaryAsset: 'asset',
+      minPrimaryCollateral: '100',
+    };
+    expect(validatePoolConfig(validConfig)).toBe(true);
   });
 });

@@ -6,10 +6,8 @@ import { Version } from '@blend-capital/blend-sdk';
 export interface Filler {
   name: string;
   keypair: Keypair;
-  primaryAsset: string;
   defaultProfitPct: number;
   minHealthFactor: number;
-  minPrimaryCollateral: bigint;
   forceFill: boolean;
   supportedBid: string[];
   supportedLot: string[];
@@ -46,18 +44,24 @@ export interface AuctionProfit {
   supportedLot: string[];
 }
 
+export interface PoolConfig {
+  poolAddress: string;
+  backstopAddress: string;
+  version: Version;
+  minPrimaryCollateral: bigint;
+  primaryAsset: string;
+}
+
 export interface AppConfig {
   name: string;
   rpcURL: string;
   networkPassphrase: string;
-  poolAddress: string;
-  backstopAddress: string;
   backstopTokenAddress: string;
   usdcAddress: string;
   blndAddress: string;
   keypair: Keypair;
   fillers: Filler[];
-  version: Version;
+  poolConfigs: PoolConfig[];
   horizonURL: string | undefined;
   priceSources: PriceSource[] | undefined;
   profits: AuctionProfit[] | undefined;
@@ -83,14 +87,12 @@ export function validateAppConfig(config: any): boolean {
     typeof config.name !== 'string' ||
     typeof config.rpcURL !== 'string' ||
     typeof config.networkPassphrase !== 'string' ||
-    typeof config.poolAddress !== 'string' ||
-    typeof config.backstopAddress !== 'string' ||
     typeof config.backstopTokenAddress !== 'string' ||
     typeof config.usdcAddress !== 'string' ||
     typeof config.blndAddress !== 'string' ||
     typeof config.keypair !== 'string' ||
-    !validateVersion(config.version) ||
     !Array.isArray(config.fillers) ||
+    !Array.isArray(config.poolConfigs) ||
     (config.horizonURL !== undefined && typeof config.horizonURL !== 'string') ||
     (config.priceSources !== undefined && !Array.isArray(config.priceSources)) ||
     (config.profits !== undefined && !Array.isArray(config.profits)) ||
@@ -104,6 +106,7 @@ export function validateAppConfig(config: any): boolean {
 
   return (
     config.fillers.every(validateFiller) &&
+    config.poolConfigs.every(validatePoolConfig) &&
     (config.priceSources === undefined || config.priceSources.every(validatePriceSource)) &&
     (config.profits === undefined || config.profits.every(validateAuctionProfit))
   );
@@ -120,15 +123,12 @@ export function validateFiller(filler: any): boolean {
     typeof filler.defaultProfitPct === 'number' &&
     typeof filler.minHealthFactor === 'number' &&
     typeof filler.forceFill === 'boolean' &&
-    typeof filler.primaryAsset === 'string' &&
-    typeof filler.minPrimaryCollateral === 'string' &&
     Array.isArray(filler.supportedBid) &&
     filler.supportedBid.every((item: any) => typeof item === 'string') &&
     Array.isArray(filler.supportedLot) &&
     filler.supportedLot.every((item: any) => typeof item === 'string')
   ) {
     filler.keypair = Keypair.fromSecret(filler.keypair);
-    filler.minPrimaryCollateral = BigInt(filler.minPrimaryCollateral);
     return true;
   }
   console.log('Invalid filler', filler);
@@ -196,4 +196,22 @@ export function validateVersion(version: any): boolean {
     return false;
   }
   return version === Version.V1 || version === Version.V2;
+}
+
+export function validatePoolConfig(config: any): boolean {
+  if (typeof config !== 'object' || config === null) {
+    return false;
+  }
+
+  if (
+    typeof config.poolAddress !== 'string' ||
+    typeof config.backstopAddress !== 'string' ||
+    !validateVersion(config.version) ||
+    typeof config.minPrimaryCollateral !== 'string' ||
+    typeof config.primaryAsset !== 'string'
+  ) {
+    return false;
+  }
+  config.minPrimaryCollateral = BigInt(config.minPrimaryCollateral);
+  return true;
 }

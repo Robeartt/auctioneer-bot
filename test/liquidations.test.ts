@@ -1,4 +1,4 @@
-import { Auction, PoolUser, Positions, PositionsEstimate } from '@blend-capital/blend-sdk';
+import { Auction, PoolUser, Positions, PositionsEstimate, Version } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import {
   calculateLiquidationPercent,
@@ -7,7 +7,7 @@ import {
   isLiquidatable,
   scanUsers,
 } from '../src/liquidations';
-import { APP_CONFIG } from '../src/utils/config.js';
+import { APP_CONFIG, PoolConfig } from '../src/utils/config.js';
 import { AuctioneerDatabase } from '../src/utils/db.js';
 import { PoolUserEst, SorobanHelper } from '../src/utils/soroban_helper.js';
 import { WorkSubmissionType } from '../src/work_submitter.js';
@@ -35,7 +35,6 @@ jest.mock('../src/user.js', () => {
 
 describe('isLiquidatable', () => {
   let userEstimate: PositionsEstimate;
-
   beforeEach(() => {
     userEstimate = new PositionsEstimate(0, 0, 0, 0, 0, 0, 0, 0, 0);
   });
@@ -129,6 +128,13 @@ describe('scanUsers', () => {
   let mockBackstopPositionsEstimate: PositionsEstimate;
   let mockPoolUserEstimate: PositionsEstimate;
   let mockPoolUser: PoolUser;
+  let poolConfig: PoolConfig = {
+    poolAddress: mockPool.id,
+    backstopAddress: mockPool.metadata.backstop,
+    version: Version.V1,
+    minPrimaryCollateral: 123n,
+    primaryAsset: USDC,
+  };
   beforeEach(() => {
     db = inMemoryAuctioneerDb();
     mockedSorobanHelper = new SorobanHelper() as jest.Mocked<SorobanHelper>;
@@ -153,6 +159,7 @@ describe('scanUsers', () => {
     mockPoolUserEstimate.totalBorrowed = 1500;
     mockPoolUserEstimate.totalSupplied = 2000;
     db.setUserEntry({
+      pool_id: mockPool.id,
       user_id: mockPoolUser.userId,
       health_factor:
         mockPoolUserEstimate.totalEffectiveCollateral /
@@ -161,23 +168,25 @@ describe('scanUsers', () => {
       liabilities: new Map(),
       updated: 123,
     });
-    mockedSorobanHelper.loadUserPositionEstimate.mockImplementation((address: string) => {
-      if (address === mockPoolUser.userId) {
-        return Promise.resolve({
-          estimate: mockPoolUserEstimate,
-          user: mockPoolUser,
-        } as PoolUserEst);
-      } else if (address === 'backstopAddress') {
-        return Promise.resolve({
-          estimate: mockBackstopPositionsEstimate,
-          user: mockBackstopPositions,
-        } as PoolUserEst);
+    mockedSorobanHelper.loadUserPositionEstimate.mockImplementation(
+      (config: PoolConfig, address: string) => {
+        if (address === mockPoolUser.userId) {
+          return Promise.resolve({
+            estimate: mockPoolUserEstimate,
+            user: mockPoolUser,
+          } as PoolUserEst);
+        } else if (address === 'backstopAddress') {
+          return Promise.resolve({
+            estimate: mockBackstopPositionsEstimate,
+            user: mockBackstopPositions,
+          } as PoolUserEst);
+        }
+        return Promise.resolve({ estimate: {}, user: {} } as PoolUserEst);
       }
-      return Promise.resolve({ estimate: {}, user: {} } as PoolUserEst);
-    });
+    );
     mockedSorobanHelper.loadAuction.mockResolvedValue(undefined);
 
-    let liquidations = await scanUsers(db, mockedSorobanHelper);
+    let liquidations = await scanUsers(db, mockedSorobanHelper, poolConfig);
     expect(liquidations.length).toBe(1);
   });
 
@@ -187,6 +196,7 @@ describe('scanUsers', () => {
     mockPoolUserEstimate.totalBorrowed = 1500;
     mockPoolUserEstimate.totalSupplied = 2000;
     db.setUserEntry({
+      pool_id: mockPool.id,
       user_id: mockPoolUser.userId,
       health_factor:
         mockPoolUserEstimate.totalEffectiveCollateral /
@@ -195,45 +205,49 @@ describe('scanUsers', () => {
       liabilities: new Map(),
       updated: 123,
     });
-    mockedSorobanHelper.loadUserPositionEstimate.mockImplementation((address: string) => {
-      if (address === mockPoolUser.userId) {
-        return Promise.resolve({
-          estimate: mockPoolUserEstimate,
-          user: mockPoolUser,
-        } as PoolUserEst);
-      } else if (address === 'backstopAddress') {
-        return Promise.resolve({
-          estimate: mockBackstopPositionsEstimate,
-          user: mockBackstopPositions,
-        } as PoolUserEst);
+    mockedSorobanHelper.loadUserPositionEstimate.mockImplementation(
+      (poolConfig: PoolConfig, address: string) => {
+        if (address === mockPoolUser.userId) {
+          return Promise.resolve({
+            estimate: mockPoolUserEstimate,
+            user: mockPoolUser,
+          } as PoolUserEst);
+        } else if (address === 'backstopAddress') {
+          return Promise.resolve({
+            estimate: mockBackstopPositionsEstimate,
+            user: mockBackstopPositions,
+          } as PoolUserEst);
+        }
+        return Promise.resolve({ estimate: {}, user: {} } as PoolUserEst);
       }
-      return Promise.resolve({ estimate: {}, user: {} } as PoolUserEst);
-    });
+    );
     mockedSorobanHelper.loadAuction.mockResolvedValue({ user: 'exists' } as Auction);
 
-    let liquidations = await scanUsers(db, mockedSorobanHelper);
+    let liquidations = await scanUsers(db, mockedSorobanHelper, poolConfig);
     expect(liquidations.length).toBe(0);
   });
 
   it('Checks backstop for bad debt when no users exist', async () => {
     mockBackstopPositionsEstimate.totalEffectiveLiabilities = 1000;
     mockBackstopPositionsEstimate.totalEffectiveCollateral = 0;
-    mockedSorobanHelper.loadUserPositionEstimate.mockImplementation((address: string) => {
-      if (address === mockPoolUser.userId) {
-        return Promise.resolve({
-          estimate: mockPoolUserEstimate,
-          user: mockPoolUser,
-        } as PoolUserEst);
-      } else if (address === 'backstopAddress') {
-        return Promise.resolve({
-          estimate: mockBackstopPositionsEstimate,
-          user: mockBackstopPositions,
-        } as PoolUserEst);
+    mockedSorobanHelper.loadUserPositionEstimate.mockImplementation(
+      (poolConfig: PoolConfig, address: string) => {
+        if (address === mockPoolUser.userId) {
+          return Promise.resolve({
+            estimate: mockPoolUserEstimate,
+            user: mockPoolUser,
+          } as PoolUserEst);
+        } else if (address === mockPool.metadata.backstop) {
+          return Promise.resolve({
+            estimate: mockBackstopPositionsEstimate,
+            user: mockBackstopPositions,
+          } as PoolUserEst);
+        }
+        return Promise.resolve({ estimate: {}, user: {} } as PoolUserEst);
       }
-      return Promise.resolve({ estimate: {}, user: {} } as PoolUserEst);
-    });
+    );
 
-    let liquidations = await scanUsers(db, mockedSorobanHelper);
+    let liquidations = await scanUsers(db, mockedSorobanHelper, poolConfig);
     expect(liquidations.length).toBe(1);
   });
 });
@@ -245,7 +259,13 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
   let mockBackstopPositionsEstimate: PositionsEstimate;
   let mockUser: PoolUser;
   let mockUserEstimate: PositionsEstimate;
-
+  let poolConfig: PoolConfig = {
+    poolAddress: mockPool.id,
+    backstopAddress: mockPool.metadata.backstop,
+    version: Version.V1,
+    minPrimaryCollateral: 123n,
+    primaryAsset: USDC,
+  };
   beforeEach(() => {
     db = inMemoryAuctioneerDb();
     mockedSorobanHelper = new SorobanHelper() as jest.Mocked<SorobanHelper>;
@@ -265,12 +285,17 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
   });
 
   it('should return an empty array when user_ids is empty', async () => {
-    const result = await checkUsersForLiquidationsAndBadDebt(db, mockedSorobanHelper, []);
+    const result = await checkUsersForLiquidationsAndBadDebt(
+      db,
+      mockedSorobanHelper,
+      poolConfig,
+      []
+    );
     expect(result).toEqual([]);
   });
 
   it('should handle backstop address user correctly', async () => {
-    const user_ids = [APP_CONFIG.backstopAddress];
+    const user_ids = [mockPool.metadata.backstop];
     mockedSorobanHelper.loadPool.mockResolvedValue(mockPool);
     mockBackstopPositionsEstimate.totalEffectiveLiabilities = 1000;
     mockBackstopPositionsEstimate.totalEffectiveCollateral = 0;
@@ -285,11 +310,17 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
     });
     mockedSorobanHelper.loadAuction.mockResolvedValue(undefined);
 
-    const result = await checkUsersForLiquidationsAndBadDebt(db, mockedSorobanHelper, user_ids);
+    const result = await checkUsersForLiquidationsAndBadDebt(
+      db,
+      mockedSorobanHelper,
+      poolConfig,
+      user_ids
+    );
 
     expect(result).toEqual([
       {
         type: WorkSubmissionType.BadDebtAuction,
+        poolConfig,
         lot: [XLM],
         bid: [USDC],
       },
@@ -314,12 +345,18 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
     });
     mockedSorobanHelper.loadAuction.mockResolvedValue(undefined);
 
-    const result = await checkUsersForLiquidationsAndBadDebt(db, mockedSorobanHelper, user_ids);
+    const result = await checkUsersForLiquidationsAndBadDebt(
+      db,
+      mockedSorobanHelper,
+      poolConfig,
+      user_ids
+    );
 
     expect(result.length).toBe(1);
     expect(result).toEqual([
       {
         type: WorkSubmissionType.LiquidateUser,
+        poolConfig,
         user: 'user1',
         liquidationPercent: 56n,
         lot: [XLM],
@@ -339,9 +376,16 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
     });
     mockedSorobanHelper.loadAuction.mockResolvedValue(undefined);
 
-    const result = await checkUsersForLiquidationsAndBadDebt(db, mockedSorobanHelper, user_ids);
+    const result = await checkUsersForLiquidationsAndBadDebt(
+      db,
+      mockedSorobanHelper,
+      poolConfig,
+      user_ids
+    );
 
     expect(result.length).toBe(1);
-    expect(result).toEqual([{ type: WorkSubmissionType.BadDebtTransfer, user: 'user1' }]);
+    expect(result).toEqual([
+      { type: WorkSubmissionType.BadDebtTransfer, user: 'user1', poolConfig },
+    ]);
   });
 });

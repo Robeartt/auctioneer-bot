@@ -31,7 +31,7 @@ export class BidderHandler {
       case EventType.LEDGER:
         try {
           const nextLedger = appEvent.ledger + 1;
-          const auctions = this.db.getAllAuctionEntries();
+          const auctions = this.db.getAllAuctionEntries(appEvent.poolConfig.poolAddress);
 
           for (let auctionEntry of auctions) {
             try {
@@ -52,6 +52,7 @@ export class BidderHandler {
               if (auctionEntry.fill_block === 0 || ledgersToFill <= 5 || ledgersToFill % 10 === 0) {
                 // recalculate the auction
                 const auction = await this.sorobanHelper.loadAuction(
+                  appEvent.poolConfig,
                   auctionEntry.user_id,
                   auctionEntry.auction_type
                 );
@@ -59,10 +60,15 @@ export class BidderHandler {
                   logger.info(
                     `Auction not found. Assuming auction was deleted or filled. Deleting auction: ${auctionEntry.user_id}, ${auctionEntry.auction_type}`
                   );
-                  this.db.deleteAuctionEntry(auctionEntry.user_id, auctionEntry.auction_type);
+                  this.db.deleteAuctionEntry(
+                    auctionEntry.pool_id,
+                    auctionEntry.user_id,
+                    auctionEntry.auction_type
+                  );
                   continue;
                 }
                 const fill = await calculateAuctionFill(
+                  appEvent.poolConfig,
                   filler,
                   auction,
                   nextLedger,
@@ -76,7 +82,7 @@ export class BidderHandler {
                   `Fill: ${stringify(fill, 2)}\n` +
                   `Ledgers To Fill In: ${fill.block - nextLedger}\n`;
                 if (auctionEntry.fill_block === 0) {
-                  await sendSlackNotification(logMessage);
+                  await sendSlackNotification(appEvent.poolConfig.poolAddress, logMessage);
                 }
                 logger.info(logMessage);
                 auctionEntry.fill_block = fill.block;
@@ -86,6 +92,7 @@ export class BidderHandler {
               if (auctionEntry.fill_block <= nextLedger) {
                 let submission: AuctionBid = {
                   type: BidderSubmissionType.BID,
+                  poolConfig: appEvent.poolConfig,
                   filler: filler,
                   auctionEntry: auctionEntry,
                 };

@@ -4,6 +4,7 @@ import { sendEvent, readEvent, deadletterEvent } from '../../src/utils/messages'
 import { AppEvent, EventType } from '../../src/events';
 import { parse, stringify } from '../../src/utils/json';
 import { logger } from '../../src/utils/logger';
+import { Version } from '@blend-capital/blend-sdk';
 
 jest.mock('fs/promises', () => ({
   appendFile: jest.fn(),
@@ -36,9 +37,19 @@ describe('messages.ts', () => {
 
   describe('sendEvent', () => {
     it('should send an event as a message', () => {
-      const event: AppEvent = { type: EventType.LEDGER, ledger: 123, timestamp: Date.now() }; // Example event};
-      const as_string = 'event_string';
-      (stringify as jest.Mock).mockReturnValue(as_string);
+      const event: AppEvent = {
+        type: EventType.LEDGER,
+        ledger: 123,
+        timestamp: Date.now(),
+        poolConfig: {
+          poolAddress: 'poolAddress',
+          backstopAddress: 'backstopAddress',
+          minPrimaryCollateral: 0n,
+          primaryAsset: 'primaryAsset',
+          version: Version.V1,
+        },
+      };
+      const as_string = stringify(event);
 
       sendEvent(mockSubprocess, event);
 
@@ -54,7 +65,18 @@ describe('messages.ts', () => {
         type: 'event',
         data: JSON.stringify({ type: EventType.LEDGER, ledger: 123, timestamp: Date.now() }),
       };
-      const event: AppEvent = { type: EventType.LEDGER, ledger: 123, timestamp: Date.now() }; // Example event};
+      const event: AppEvent = {
+        type: EventType.LEDGER,
+        ledger: 123,
+        timestamp: Date.now(),
+        poolConfig: {
+          poolAddress: 'poolAddress',
+          backstopAddress: 'backstopAddress',
+          minPrimaryCollateral: 0n,
+          primaryAsset: 'primaryAsset',
+          version: Version.V1,
+        },
+      };
       (parse as jest.Mock).mockReturnValue(event);
 
       const result = readEvent(message);
@@ -65,7 +87,6 @@ describe('messages.ts', () => {
 
     it('should return undefined for an invalid event type', () => {
       const message = { type: 'invalid_event', data: 'event_string' };
-      const event: AppEvent = { type: 'UNKNOWN EVENT' } as any; // Example event};
 
       const result = readEvent(message);
 
@@ -92,29 +113,47 @@ describe('messages.ts', () => {
 
   describe('deadletterEvent', () => {
     it('should append an event to the deadletter queue', async () => {
-      const event: AppEvent = { type: EventType.LEDGER, ledger: 123, timestamp: Date.now() }; // Example event};
-      const as_string = JSON.stringify(event);
-      (stringify as jest.Mock).mockReturnValue(as_string);
+      const event: AppEvent = {
+        type: EventType.LEDGER,
+        ledger: 123,
+        timestamp: Date.now(),
+        poolConfig: {
+          poolAddress: 'poolAddress',
+          backstopAddress: 'backstopAddress',
+          minPrimaryCollateral: 0n,
+          primaryAsset: 'primaryAsset',
+          version: Version.V1,
+        },
+      };
+      const as_string = stringify(event);
 
       await deadletterEvent(event);
 
-      expect(stringify).toHaveBeenCalledWith(event);
       expect(appendFile).toHaveBeenCalledWith('./data/deadletter.txt', as_string + '\n');
       expect(logger.error).toHaveBeenCalledWith('Sending event to deadletter queue.');
     });
 
     it('should log an error if appending to the deadletter queue fails', async () => {
-      const event: AppEvent = { type: EventType.LEDGER, ledger: 123, timestamp: Date.now() }; // Example event};
-      const as_string = JSON.stringify(event);
+      const event: AppEvent = {
+        type: EventType.LEDGER,
+        ledger: 123,
+        timestamp: Date.now(),
+        poolConfig: {
+          poolAddress: 'poolAddress',
+          backstopAddress: 'backstopAddress',
+          minPrimaryCollateral: 0n,
+          primaryAsset: 'primaryAsset',
+          version: Version.V1,
+        },
+      }; // Example event};
+      const as_string = stringify(event);
       const error = new Error('append error');
-      (stringify as jest.Mock).mockReturnValue(as_string);
       (appendFile as jest.Mock).mockImplementation(() => {
         throw error;
       });
 
       await deadletterEvent(event);
 
-      expect(stringify).toHaveBeenCalledWith(event);
       expect(appendFile).toHaveBeenCalledWith('./data/deadletter.txt', as_string + '\n');
       expect(logger.error).toHaveBeenCalledWith('Sending event to deadletter queue.');
       expect(logger.error).toHaveBeenCalledWith(

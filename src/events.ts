@@ -1,7 +1,7 @@
 import { PoolEvent } from '@blend-capital/blend-sdk';
-
+import { PoolConfig } from './utils/config.js';
 export enum EventType {
-  INIT = 'init',
+  VALIDATE_POOLS = 'validate_pools',
   LEDGER = 'ledger',
   PRICE_UPDATE = 'price_update',
   ORACLE_SCAN = 'oracle_scan',
@@ -14,7 +14,7 @@ export enum EventType {
 // ********* Shared **********
 
 export type AppEvent =
-  | InitEvent
+  | ValidatePoolsEvent
   | LedgerEvent
   | PriceUpdateEvent
   | OracleScanEvent
@@ -36,6 +36,7 @@ export interface BaseEvent {
  */
 export interface LedgerEvent extends BaseEvent {
   type: EventType.LEDGER;
+  poolConfig: PoolConfig;
   ledger: number;
 }
 
@@ -44,13 +45,15 @@ export interface LedgerEvent extends BaseEvent {
  */
 export interface PoolEventEvent extends BaseEvent {
   type: EventType.POOL_EVENT;
+  poolConfig: PoolConfig;
   event: PoolEvent;
 }
 
 // ********** Work Queue Only **********
 
-export interface InitEvent extends BaseEvent {
-  type: EventType.INIT;
+export interface ValidatePoolsEvent extends BaseEvent {
+  type: EventType.VALIDATE_POOLS;
+  pools: PoolConfig[];
 }
 
 /**
@@ -65,6 +68,7 @@ export interface PriceUpdateEvent extends BaseEvent {
  */
 export interface OracleScanEvent extends BaseEvent {
   type: EventType.ORACLE_SCAN;
+  poolConfig: PoolConfig;
 }
 
 /**
@@ -72,6 +76,7 @@ export interface OracleScanEvent extends BaseEvent {
  */
 export interface LiqScanEvent extends BaseEvent {
   type: EventType.LIQ_SCAN;
+  poolConfig: PoolConfig;
 }
 
 /**
@@ -79,6 +84,7 @@ export interface LiqScanEvent extends BaseEvent {
  */
 export interface UserRefreshEvent extends BaseEvent {
   type: EventType.USER_REFRESH;
+  poolConfig: PoolConfig;
   /**
    * The cutoff ledger such that any user data older than this will be refreshed.
    */
@@ -90,6 +96,7 @@ export interface UserRefreshEvent extends BaseEvent {
  */
 export interface CheckUserEvent extends BaseEvent {
   type: EventType.CHECK_USER;
+  poolConfig: PoolConfig;
   /**
    * The user to check.
    */

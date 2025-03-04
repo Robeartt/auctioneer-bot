@@ -10,6 +10,8 @@ export interface StatusEntry {
 }
 
 export interface UserEntry {
+  // The pool id the user belongs to
+  pool_id: string;
   // The user's address
   user_id: string;
   // The user's health factor
@@ -29,6 +31,8 @@ export enum AuctionType {
 }
 
 export interface AuctionEntry {
+  // The auction's pool id
+  pool_id: string;
   // The auction's source address
   user_id: string;
   // The auction's type
@@ -55,6 +59,8 @@ export interface PriceEntry {
 export interface FilledAuctionEntry {
   // The transaction hash
   tx_hash: string;
+  // The auction's pool id
+  pool_id: string;
   // The address that filled the auction
   filler: string;
   // The auction's source address
@@ -191,9 +197,10 @@ export class AuctioneerDatabase {
     try {
       return this.db
         .prepare(
-          'INSERT OR REPLACE INTO users (user_id, health_factor, collateral, liabilities, updated) VALUES (?, ?, ?, ?, ?)'
+          'INSERT OR REPLACE INTO users (pool_id, user_id, health_factor, collateral, liabilities, updated) VALUES (?, ?, ?, ?, ?, ?)'
         )
         .run(
+          entry.pool_id,
           entry.user_id,
           entry.health_factor,
           stringify(entry.collateral),
@@ -208,12 +215,15 @@ export class AuctioneerDatabase {
 
   /**
    * Delete a user from the database.
+   * @param pool_id - The pool id the user belongs to
    * @param user_id - The user's address
    * @returns The result of the sql operation
    */
-  deleteUserEntry(user_id: string): RunResult {
+  deleteUserEntry(pool_id: string, user_id: string): RunResult {
     try {
-      return this.db.prepare('DELETE FROM users WHERE user_id = ?').run(user_id);
+      return this.db
+        .prepare('DELETE FROM users WHERE pool_id = ? AND user_id = ?')
+        .run(pool_id, user_id);
     } catch (error: any) {
       logger.error(`Error deleting user entry: ${error}`);
       throw error;
@@ -222,14 +232,18 @@ export class AuctioneerDatabase {
 
   /**
    * Get a user from the database.
+   * @param pool_id - The pool id the user belongs to
    * @param user_id - The user's address
    * @returns The user entry or undefined if it does not exist
    */
-  getUserEntry(user_id: string): UserEntry | undefined {
+  getUserEntry(pool_id: string, user_id: string): UserEntry | undefined {
     try {
-      let entry: any = this.db.prepare('SELECT * FROM users WHERE user_id = ?').get(user_id);
+      let entry: any = this.db
+        .prepare('SELECT * FROM users WHERE pool_id = ? AND user_id = ?')
+        .get(pool_id, user_id);
       if (entry) {
         return {
+          pool_id: entry.pool_id,
           user_id: entry.user_id,
           health_factor: entry.health_factor,
           collateral: parse<Map<string, bigint>>(entry.collateral),
@@ -246,16 +260,18 @@ export class AuctioneerDatabase {
 
   /**
    * Get all users in the database with a health factor under a certain value.
+   * @param pool_id - The pool id the user belongs to
    * @param health_factor - The health factor to filter by
    * @returns An array user entries, or an empty array if none are found
    */
-  getUserEntriesUnderHealthFactor(health_factor: number): UserEntry[] {
+  getUserEntriesUnderHealthFactor(pool_id: string, health_factor: number): UserEntry[] {
     try {
       let entries: any[] = this.db
-        .prepare('SELECT * FROM users WHERE health_factor < ?')
-        .all(health_factor);
+        .prepare('SELECT * FROM users WHERE health_factor < ? AND pool_id = ?')
+        .all(health_factor, pool_id);
       return entries.map((entry) => {
         return {
+          pool_id: entry.pool_id,
           user_id: entry.user_id,
           health_factor: entry.health_factor,
           collateral: parse<Map<string, bigint>>(entry.collateral),
@@ -271,16 +287,20 @@ export class AuctioneerDatabase {
 
   /**
    * Get all users in the database with a liability position for the given asset.
+   * @param poolId - The pool id the user belongs to
    * @param assetId - The asset to filter by
    * @returns An array user entries, or an empty array if none are found
    */
-  getUserEntriesWithLiability(assetId: string): UserEntry[] {
+  getUserEntriesWithLiability(poolId: string, assetId: string): UserEntry[] {
     try {
       let entries: any[] = this.db
-        .prepare('SELECT * FROM users WHERE json_extract(liabilities, ?) IS NOT NULL')
-        .all(`$.value.${assetId}`);
+        .prepare(
+          'SELECT * FROM users WHERE json_extract(liabilities, ?) IS NOT NULL AND pool_id = ?'
+        )
+        .all(`$.value.${assetId}`, poolId);
       return entries.map((entry) => {
         return {
+          pool_id: entry.pool_id,
           user_id: entry.user_id,
           health_factor: entry.health_factor,
           collateral: parse<Map<string, bigint>>(entry.collateral),
@@ -295,17 +315,21 @@ export class AuctioneerDatabase {
   }
 
   /**
-   * Get all users in the database with a collateral position for the given asset.
+   * Get all users from `pool_id` in the database with a collateral position for the given asset.
+   * @param poolId - The pool id the user belongs to
    * @param assetId - The asset to filter by
    * @returns An array user entries, or an empty array if none are found
    */
-  getUserEntriesWithCollateral(assetId: string): UserEntry[] {
+  getUserEntriesWithCollateral(poolId: string, assetId: string): UserEntry[] {
     try {
       let entries: any[] = this.db
-        .prepare('SELECT * FROM users WHERE json_extract(collateral, ?) IS NOT NULL')
-        .all(`$.value.${assetId}`);
+        .prepare(
+          'SELECT * FROM users WHERE json_extract(collateral, ?) IS NOT NULL AND pool_id = ?'
+        )
+        .all(`$.value.${assetId}`, poolId);
       return entries.map((entry) => {
         return {
+          pool_id: entry.pool_id,
           user_id: entry.user_id,
           health_factor: entry.health_factor,
           collateral: parse<Map<string, bigint>>(entry.collateral),
@@ -320,17 +344,18 @@ export class AuctioneerDatabase {
   }
 
   /**
-   * Get all users in the database with an entry updated before the given ledger.
+   * Get all users from `pool_id` in the database with an entry updated before the given ledger.
    * @param ledger - The ledger to filter by
    * @returns An array user entries, or an empty array if none are found
    */
-  getUserEntriesUpdatedBefore(ledger: number, limit: number = 10): UserEntry[] {
+  getUserEntriesUpdatedBefore(poolId: string, ledger: number, limit: number = 10): UserEntry[] {
     try {
       let entries: any[] = this.db
-        .prepare('SELECT * FROM users WHERE updated < ? LIMIT ?')
-        .all(ledger, limit);
+        .prepare('SELECT * FROM users WHERE updated < ? AND pool_id = ? LIMIT ? ')
+        .all(ledger, poolId, limit);
       return entries.map((entry) => {
         return {
+          pool_id: entry.pool_id,
           user_id: entry.user_id,
           health_factor: entry.health_factor,
           collateral: parse<Map<string, bigint>>(entry.collateral),
@@ -355,9 +380,10 @@ export class AuctioneerDatabase {
     try {
       return this.db
         .prepare(
-          `INSERT OR REPLACE INTO auctions (user_id, auction_type, filler, start_block, fill_block, updated) VALUES (?, ?, ?, ?, ?, ?)`
+          `INSERT OR REPLACE INTO auctions (pool_id, user_id, auction_type, filler, start_block, fill_block, updated) VALUES (?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
+          entry.pool_id,
           entry.user_id,
           entry.auction_type,
           entry.filler,
@@ -380,11 +406,11 @@ export class AuctioneerDatabase {
    * @param auction_type - The auction's type
    * @returns The result of the sql operation
    */
-  deleteAuctionEntry(user_id: string, auction_type: AuctionType): RunResult {
+  deleteAuctionEntry(pool_id: string, user_id: string, auction_type: AuctionType): RunResult {
     try {
       return this.db
-        .prepare('DELETE FROM auctions WHERE user_id = ? AND auction_type = ?')
-        .run(user_id, auction_type);
+        .prepare('DELETE FROM auctions WHERE pool_id = ? AND user_id = ? AND auction_type = ?')
+        .run(pool_id, user_id, auction_type);
     } catch (error: any) {
       logger.error(`Error deleting auction entry: ${error}`);
       throw error;
@@ -393,34 +419,39 @@ export class AuctioneerDatabase {
 
   /**
    * Get an ongoing auction from the database.
+   * @param pool_id - The pool id of the auction
    * @param user_id - The auction's source address
    * @param auction_type - The auction's type
    * @returns The result of the sql operation
    */
-  getAuctionEntry(user_id: string, auction_type: AuctionType): AuctionEntry | undefined {
+  getAuctionEntry(
+    pool_id: string,
+    user_id: string,
+    auction_type: AuctionType
+  ): AuctionEntry | undefined {
     try {
       return this.db
-        .prepare('SELECT * FROM auctions WHERE user_id = ? AND auction_type = ?')
-        .get(user_id, auction_type) as AuctionEntry | undefined;
+        .prepare('SELECT * FROM auctions WHERE pool_id = ? AND user_id = ? AND auction_type = ?')
+        .get(pool_id, user_id, auction_type) as AuctionEntry | undefined;
     } catch (error: any) {
       logger.error(
-        `Error getting auction entry. user_id=${user_id} type=${auction_type} : ${error}`
+        `Error getting auction entry. pool_id=${pool_id} user_id=${user_id} type=${auction_type} : ${error}`
       );
       throw error;
     }
   }
 
   /**
-   * Get all ongoing auction from the database.
-   * @param user_id - The auction's source address
-   * @param auction_type - The auction's type
+   * Get all ongoing `pool_id` auctions from the database
+   * @param pool_id - The pool id that auctions must belong to
    * @returns The result of the sql operation
    */
-  getAllAuctionEntries(): AuctionEntry[] {
+  getAllAuctionEntries(pool_id: string): AuctionEntry[] {
     try {
-      let entries: any[] = this.db.prepare('SELECT * FROM auctions').all();
+      let entries: any[] = this.db.prepare('SELECT * FROM auctions WHERE pool_id = ?').all(pool_id);
       return entries.map((entry) => {
         return {
+          pool_id: entry.pool_id,
           user_id: entry.user_id,
           auction_type: entry.auction_type,
           filler: entry.filler,
@@ -446,11 +477,12 @@ export class AuctioneerDatabase {
     try {
       return this.db
         .prepare(
-          'INSERT INTO filled_auctions (tx_hash, filler, user_id, auction_type, bid, bid_total, lot, lot_total, est_profit, fill_block, timestamp) ' +
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+          'INSERT INTO filled_auctions (tx_hash, pool_id, filler, user_id, auction_type, bid, bid_total, lot, lot_total, est_profit, fill_block, timestamp) ' +
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )
         .run(
           entry.tx_hash,
+          entry.pool_id,
           entry.filler,
           entry.user_id,
           entry.auction_type,

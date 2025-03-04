@@ -28,7 +28,7 @@ import {
   TransactionBuilder,
   xdr,
 } from '@stellar/stellar-sdk';
-import { APP_CONFIG } from './config.js';
+import { APP_CONFIG, PoolConfig } from './config.js';
 import { logger } from './logger.js';
 
 export interface PoolUserEst {
@@ -38,7 +38,8 @@ export interface PoolUserEst {
 
 export class SorobanHelper {
   network: Network;
-  private pool_cache: Pool | undefined;
+  private pool_cache: Map<string, Pool>;
+  // cache for pool users keyed by 'poolId + userId'
   private user_cache: Map<string, PoolUser> = new Map();
   private oracle_cache: PoolOracle | undefined;
 
@@ -50,7 +51,7 @@ export class SorobanHelper {
         allowHttp: true,
       },
     };
-    this.pool_cache = undefined;
+    this.pool_cache = new Map();
   }
 
   async loadLatestLedger(): Promise<number> {
@@ -64,36 +65,44 @@ export class SorobanHelper {
     }
   }
 
-  async loadPool(): Promise<Pool> {
-    if (this.pool_cache) {
-      return this.pool_cache;
+  async loadPool(config: PoolConfig): Promise<Pool> {
+    let cachedPool = this.pool_cache.get(config.poolAddress);
+    if (cachedPool) {
+      return cachedPool;
     } else {
-      if (APP_CONFIG.version === Version.V1) {
-        this.pool_cache = await PoolV1.load(this.network, APP_CONFIG.poolAddress);
+      let pool: Pool | undefined;
+      if (config.version === Version.V1) {
+        pool = await PoolV1.load(this.network, config.poolAddress);
       } else {
-        this.pool_cache = await PoolV2.load(this.network, APP_CONFIG.poolAddress);
+        pool = await PoolV2.load(this.network, config.poolAddress);
       }
-      return this.pool_cache;
+      if (pool) {
+        this.pool_cache.set(config.poolAddress, pool);
+        return pool;
+      } else {
+        throw new Error(`Pool not found: ${config.poolAddress}`);
+      }
     }
   }
 
-  async loadUser(address: string): Promise<PoolUser> {
-    if (this.user_cache.has(address)) {
-      return this.user_cache.get(address) as PoolUser;
+  async loadUser(config: PoolConfig, userId: string): Promise<PoolUser> {
+    if (this.user_cache.has(config.poolAddress + userId)) {
+      return this.user_cache.get(config.poolAddress + userId) as PoolUser;
     } else {
-      const pool = await this.loadPool();
-      const user = await pool.loadUser(address);
-      this.user_cache.set(address, user);
+      const pool = await this.loadPool(config);
+      const user = await pool.loadUser(userId);
+
+      this.user_cache.set(config.poolAddress + userId, user);
       return user;
     }
   }
 
-  async loadPoolOracle(): Promise<PoolOracle> {
+  async loadPoolOracle(config: PoolConfig): Promise<PoolOracle> {
     try {
       if (this.oracle_cache) {
         return this.oracle_cache;
       }
-      const pool = await this.loadPool();
+      const pool = await this.loadPool(config);
       const oracle = await pool.loadOracle();
       this.oracle_cache = oracle;
       return oracle;
@@ -103,10 +112,10 @@ export class SorobanHelper {
     }
   }
 
-  async loadUserPositionEstimate(address: string): Promise<PoolUserEst> {
+  async loadUserPositionEstimate(config: PoolConfig, userId: string): Promise<PoolUserEst> {
     try {
-      const pool = await this.loadPool();
-      const user = await pool.loadUser(address);
+      const pool = await this.loadPool(config);
+      const user = await this.loadUser(config, userId);
       const poolOracle = await pool.loadOracle();
       return { estimate: PositionsEstimate.build(pool, poolOracle, user.positions), user };
     } catch (e) {
@@ -115,10 +124,14 @@ export class SorobanHelper {
     }
   }
 
-  async loadAuction(userId: string, auctionType: number): Promise<Auction | undefined> {
+  async loadAuction(
+    config: PoolConfig,
+    userId: string,
+    auctionType: number
+  ): Promise<Auction | undefined> {
     try {
       const stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
-      const ledgerKey = AuctionData.ledgerKey(APP_CONFIG.poolAddress, {
+      const ledgerKey = AuctionData.ledgerKey(config.poolAddress, {
         auct_type: auctionType,
         user: userId,
       });
@@ -175,7 +188,7 @@ export class SorobanHelper {
     }
   }
 
-  async simLPTokenToUSDC(amount: bigint): Promise<bigint | undefined> {
+  async simLPTokenToUSDC(backstopAddress: string, amount: bigint): Promise<bigint | undefined> {
     try {
       let comet = new Contract(APP_CONFIG.backstopTokenAddress);
       let op = comet.call(
@@ -184,7 +197,7 @@ export class SorobanHelper {
           nativeToScVal(APP_CONFIG.usdcAddress, { type: 'address' }),
           nativeToScVal(amount, { type: 'i128' }),
           nativeToScVal(0, { type: 'i128' }),
-          nativeToScVal(APP_CONFIG.backstopAddress, { type: 'address' }),
+          nativeToScVal(backstopAddress, { type: 'address' }),
         ]
       );
       let account = new Account(Keypair.random().publicKey(), '123');

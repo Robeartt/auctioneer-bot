@@ -41,6 +41,7 @@ export function updateUser(
       liabilitiesAddress.set(asset, amount);
     }
     const new_entry: UserEntry = {
+      pool_id: pool.id,
       user_id: user.userId,
       health_factor:
         positionsEstimate.totalEffectiveCollateral / positionsEstimate.totalEffectiveLiabilities,
@@ -54,7 +55,7 @@ export function updateUser(
     );
   } else {
     // user does not have liabilities, remove db entry if it exists
-    db.deleteUserEntry(user.userId);
+    db.deleteUserEntry(pool.id, user.userId);
     logger.info(
       `Deleted user entry for ${user.userId} at ledger ${ledger}, no liabilities remaining.`
     );

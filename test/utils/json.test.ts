@@ -1,4 +1,9 @@
-import { BlendContractType, PoolEventType, PoolNewAuctionV1Event } from '@blend-capital/blend-sdk';
+import {
+  BlendContractType,
+  PoolEventType,
+  PoolNewAuctionV1Event,
+  Version,
+} from '@blend-capital/blend-sdk';
 import { EventType, PoolEventEvent } from '../../src/events.js';
 import { UserEntry } from '../../src/utils/db.js';
 import { parse, stringify } from '../../src/utils/json.js';
@@ -6,6 +11,7 @@ import { parse, stringify } from '../../src/utils/json.js';
 test('user entry parse round trip', () => {
   // happy path
   const userTest: UserEntry = {
+    pool_id: 'test',
     user_id: 'test',
     health_factor: 2.5,
     collateral: new Map<string, bigint>([
@@ -30,6 +36,7 @@ test('user entry parse round trip', () => {
 
   // with an empty map
   const userTestEmpty: UserEntry = {
+    pool_id: 'test',
     user_id: 'test',
     health_factor: 2.5,
     collateral: new Map<string, bigint>([['asset3', BigInt(123)]]),
@@ -83,6 +90,13 @@ test('blend event parse round trip', () => {
   const eventTest: PoolEventEvent = {
     type: EventType.POOL_EVENT,
     timestamp: Date.now(),
+    poolConfig: {
+      poolAddress: 'test',
+      backstopAddress: 'test',
+      version: Version.V1,
+      minPrimaryCollateral: 123n,
+      primaryAsset: 'test',
+    },
     event: blendEvent,
   };
 
@@ -117,6 +131,13 @@ test('blend event parse round trip', () => {
     expect(eventTest.event.auctionData.lot.get('C2')).toEqual(
       asObj.event.auctionData.lot.get('C2')
     );
+    expect(eventTest.poolConfig.backstopAddress).toEqual(asObj.poolConfig.backstopAddress);
+    expect(eventTest.poolConfig.poolAddress).toEqual(asObj.poolConfig.poolAddress);
+    expect(eventTest.poolConfig.version).toEqual(asObj.poolConfig.version);
+    expect(eventTest.poolConfig.minPrimaryCollateral).toEqual(
+      asObj.poolConfig.minPrimaryCollateral
+    );
+    expect(eventTest.poolConfig.primaryAsset).toEqual(asObj.poolConfig.primaryAsset);
   } else {
     fail('Type mismatch');
   }

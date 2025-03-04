@@ -6,7 +6,7 @@ import {
   PoolContractV2,
   Version,
 } from '@blend-capital/blend-sdk';
-import { APP_CONFIG } from './utils/config.js';
+import { APP_CONFIG, PoolConfig } from './utils/config.js';
 import { AuctionType } from './utils/db.js';
 import { serializeError, stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
@@ -22,12 +22,17 @@ export enum WorkSubmissionType {
   BadDebtAuction = 'bad_debt_auction',
 }
 
-export interface BadDebtTransfer {
+export interface BaseWorkSubmission {
+  type: WorkSubmissionType;
+  poolConfig: PoolConfig;
+}
+
+export interface BadDebtTransfer extends BaseWorkSubmission {
   type: WorkSubmissionType.BadDebtTransfer;
   user: string;
 }
 
-export interface UserLiquidation {
+export interface UserLiquidation extends BaseWorkSubmission {
   type: WorkSubmissionType.LiquidateUser;
   user: string;
   liquidationPercent: bigint;
@@ -35,7 +40,7 @@ export interface UserLiquidation {
   bid: string[];
 }
 
-export interface BadDebtAuction {
+export interface BadDebtAuction extends BaseWorkSubmission {
   type: WorkSubmissionType.BadDebtAuction;
   lot: string[];
   bid: string[];
@@ -71,8 +76,8 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
     try {
       logger.info(`Creating liquidation for user: ${userLiquidation.user}`);
       let op: string;
-      if (APP_CONFIG.version === Version.V2) {
-        const pool = new PoolContractV2(APP_CONFIG.poolAddress);
+      if (userLiquidation.poolConfig.version === Version.V2) {
+        const pool = new PoolContractV2(userLiquidation.poolConfig.poolAddress);
         op = pool.newAuction({
           user: userLiquidation.user,
           percent: FixedMath.toFloat(userLiquidation.liquidationPercent, 0),
@@ -81,15 +86,18 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
           lot: userLiquidation.lot,
         });
       } else {
-        const pool = new PoolContractV1(APP_CONFIG.poolAddress);
+        const pool = new PoolContractV1(userLiquidation.poolConfig.poolAddress);
         op = pool.newLiquidationAuction({
           user: userLiquidation.user,
           percent_liquidated: userLiquidation.liquidationPercent,
         });
       }
       const auctionExists =
-        (await sorobanHelper.loadAuction(userLiquidation.user, AuctionType.Liquidation)) !==
-        undefined;
+        (await sorobanHelper.loadAuction(
+          userLiquidation.poolConfig,
+          userLiquidation.user,
+          AuctionType.Liquidation
+        )) !== undefined;
       if (auctionExists) {
         logger.info(`User liquidation auction already exists for user: ${userLiquidation.user}`);
         return true;
@@ -97,7 +105,7 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
       await sorobanHelper.submitTransaction(op, APP_CONFIG.keypair);
       const logMessage = `Successfully created liquidation for user: ${userLiquidation.user} Liquidation Percent: ${userLiquidation.liquidationPercent}`;
       logger.info(logMessage);
-      await sendSlackNotification(logMessage);
+      await sendSlackNotification(userLiquidation.poolConfig.poolAddress, logMessage);
       return true;
     } catch (e: any) {
       // if pool throws a "LIQ_TOO_SMALL" or "LIQ_TOO_LARGE" error, adjust the fill percentage
@@ -121,6 +129,7 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
         `Liquidation Percent: ${userLiquidation.liquidationPercent}`;
       logger.error(logMessage, e);
       await sendSlackNotification(
+        userLiquidation.poolConfig.poolAddress,
         `<!channel> ` + logMessage + `\nError: ${stringify(serializeError(e))}`
       );
       return false;
@@ -134,19 +143,20 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
     try {
       logger.info(`Transferring bad debt to backstop for user: ${badDebtTransfer.user}`);
       const pool =
-        APP_CONFIG.version === Version.V2
-          ? new PoolContractV2(APP_CONFIG.poolAddress)
-          : new PoolContractV1(APP_CONFIG.poolAddress);
+        badDebtTransfer.poolConfig.version === Version.V2
+          ? new PoolContractV2(badDebtTransfer.poolConfig.poolAddress)
+          : new PoolContractV1(badDebtTransfer.poolConfig.poolAddress);
       let op = pool.badDebt(badDebtTransfer.user);
       await sorobanHelper.submitTransaction(op, APP_CONFIG.keypair);
       const logMessage = `Successfully transferred bad debt to backstop for user: ${badDebtTransfer.user}`;
-      await sendSlackNotification(logMessage);
+      await sendSlackNotification(badDebtTransfer.poolConfig.poolAddress, logMessage);
       logger.info(logMessage);
       return true;
     } catch (e: any) {
       const logMessage = `Error transfering bad debt\n` + `User: ${badDebtTransfer.user}`;
       logger.error(logMessage, e);
       await sendSlackNotification(
+        badDebtTransfer.poolConfig.poolAddress,
         `<!channel> ` + logMessage + `\nError: ${stringify(serializeError(e))}`
       );
       return false;
@@ -160,22 +170,25 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
     try {
       logger.info(`Creating bad debt auction`);
       let op: string;
-      if (APP_CONFIG.version === Version.V2) {
-        const pool = new PoolContractV2(APP_CONFIG.poolAddress);
+      if (submission.poolConfig.version === Version.V2) {
+        const pool = new PoolContractV2(submission.poolConfig.poolAddress);
         op = pool.newAuction({
-          user: APP_CONFIG.backstopAddress,
+          user: submission.poolConfig.backstopAddress,
           percent: 100,
           auction_type: AuctionType.BadDebt,
           bid: submission.bid,
           lot: submission.lot,
         });
       } else {
-        const pool = new PoolContractV1(APP_CONFIG.poolAddress);
+        const pool = new PoolContractV1(submission.poolConfig.poolAddress);
         op = pool.newBadDebtAuction();
       }
       const auctionExists =
-        (await sorobanHelper.loadAuction(APP_CONFIG.backstopAddress, AuctionType.BadDebt)) !==
-        undefined;
+        (await sorobanHelper.loadAuction(
+          submission.poolConfig,
+          submission.poolConfig.backstopAddress,
+          AuctionType.BadDebt
+        )) !== undefined;
       if (auctionExists) {
         logger.info(`Bad debt auction already exists`);
         return true;
@@ -183,12 +196,13 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
       await sorobanHelper.submitTransaction(op, APP_CONFIG.keypair);
       const logMessage = `Successfully created bad debt auction`;
       logger.info(logMessage);
-      await sendSlackNotification(logMessage);
+      await sendSlackNotification(submission.poolConfig.poolAddress, logMessage);
       return true;
     } catch (e: any) {
       const logMessage = `Error creating bad debt auction\n` + `Error: ${e}\n`;
       logger.error(logMessage);
       await sendSlackNotification(
+        submission.poolConfig.poolAddress,
         `<!channel> ` + logMessage + `\nError: ${stringify(serializeError(e))}`
       );
       return false;
@@ -210,6 +224,6 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
         break;
     }
     logger.error(logMessage);
-    await sendSlackNotification(logMessage);
+    await sendSlackNotification(submission.poolConfig.poolAddress, logMessage);
   }
 }

@@ -10,7 +10,7 @@ import {
   Reserve,
 } from '@blend-capital/blend-sdk';
 import { Asset } from '@stellar/stellar-sdk';
-import { APP_CONFIG, AuctionProfit, Filler } from './utils/config.js';
+import { APP_CONFIG, AuctionProfit, Filler, PoolConfig } from './utils/config.js';
 import { stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
 import { SorobanHelper } from './utils/soroban_helper.js';
@@ -108,6 +108,7 @@ export async function getFillerAvailableBalances(
 export function managePositions(
   filler: Filler,
   pool: Pool,
+  poolConfig: PoolConfig,
   poolOracle: PoolOracle,
   positions: Positions,
   balances: Map<string, bigint>
@@ -187,7 +188,7 @@ export function managePositions(
       collateralList.push({ reserve, price, amount, size: 0 });
     }
     // hacky - set size to MAX for (3), to ensure it is withdrawn last
-    else if (reserve.assetId === filler.primaryAsset) {
+    else if (reserve.assetId === poolConfig.primaryAsset) {
       collateralList.push({ reserve, price, amount, size: Number.MAX_SAFE_INTEGER });
     } else {
       const size = reserve.toEffectiveAssetFromBTokenFloat(amount) * price;
@@ -219,12 +220,12 @@ export function managePositions(
       break;
     }
     // require the filler to keep at least the min collateral balance of their primary asset
-    if (reserve.assetId === filler.primaryAsset) {
-      const toMinPosition = reserve.toAssetFromBToken(amount) - filler.minPrimaryCollateral;
+    if (reserve.assetId === poolConfig.primaryAsset) {
+      const toMinPosition = reserve.toAssetFromBToken(amount) - poolConfig.minPrimaryCollateral;
       withdrawAmount = withdrawAmount > toMinPosition ? toMinPosition : withdrawAmount;
       // if withdrawAmount is less than 1% of the minPrimaryCollateral stop
       // this prevents dust withdraws from looping unwind events due to interest accrual
-      if (withdrawAmount < filler.minPrimaryCollateral / 100n) {
+      if (withdrawAmount < poolConfig.minPrimaryCollateral / 100n) {
         break;
       }
     }
