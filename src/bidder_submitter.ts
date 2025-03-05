@@ -150,7 +150,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
           `Fill Percent ${fill.percent}\n` +
           `Ledger Fill Delta ${result.ledger - auctionBid.auctionEntry.start_block}\n` +
           `Hash ${result.txHash}\n`;
-        await sendSlackNotification(auctionBid.poolConfig.poolAddress, logMessage);
+        await sendSlackNotification(auctionBid.poolConfig, logMessage);
         logger.info(logMessage);
         return true;
       } else {
@@ -170,7 +170,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         `User: ${auctionBid.auctionEntry.user_id}\n` +
         `Filler: ${auctionBid.filler.name}`;
       await sendSlackNotification(
-        auctionBid.poolConfig.poolAddress,
+        auctionBid.poolConfig,
         `<!channel> ` + logMessage + `\nError: ${stringify(serializeError(e))}`
       );
       logger.error(logMessage, e);
@@ -254,7 +254,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         `Filler: ${fillerUnwind.filler.name}\n` +
         `Positions: ${stringify(filler_user.positions, 2)}`;
       logger.info(logMessage);
-      await sendSlackNotification(fillerUnwind.poolConfig.poolAddress, logMessage);
+      await sendSlackNotification(fillerUnwind.poolConfig, logMessage);
       return true;
     }
 
@@ -279,6 +279,6 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         break;
     }
     logger.error(logMessage);
-    await sendSlackNotification(submission.poolConfig.poolAddress, logMessage);
+    await sendSlackNotification(submission.poolConfig, logMessage);
   }
 }

@@ -45,6 +45,7 @@ export interface AuctionProfit {
 }
 
 export interface PoolConfig {
+  name: string;
   poolAddress: string;
   backstopAddress: string;
   version: Version;
@@ -204,6 +205,7 @@ export function validatePoolConfig(config: any): boolean {
   }
 
   if (
+    typeof config.name !== 'string' ||
     typeof config.poolAddress !== 'string' ||
     typeof config.backstopAddress !== 'string' ||
     !validateVersion(config.version) ||
