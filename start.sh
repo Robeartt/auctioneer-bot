@@ -18,6 +18,9 @@ sqlite3 ./data/auctioneer.sqlite < ./init_db.sql
 
 echo "Database initialized."
 
+# Migrate to the latest database schema
+./db-migrations/v2/v2-migration.sh
+
 # Make a directory to store the logs at /app/data/logs if it does not exist
 if ! test -d ./data/logs; then
   mkdir ./data/logs

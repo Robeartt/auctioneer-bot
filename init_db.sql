@@ -6,6 +6,13 @@ CREATE TABLE IF NOT EXISTS status (
     latest_ledger INTEGER NOT NULL
 );
 
+-- Table to store the version of the database
+CREATE TABLE IF NOT EXISTS db_version (
+    version INTEGER PRIMARY KEY NOT NULL,
+    description TEXT NOT NULL,
+    applied_at INTEGER NOT NULL
+);
+
 -- Table to store the user's that have positions in the pool
 CREATE TABLE IF NOT EXISTS users (
     pool_id TEXT NOT NULL,
@@ -53,3 +60,17 @@ CREATE TABLE IF NOT EXISTS filled_auctions (
     timestamp INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_filler ON filled_auctions(filler);
+
+INSERT INTO db_version (version, description, applied_at)
+SELECT 2, 'init db', unixepoch()
+WHERE NOT EXISTS (
+    SELECT 1 FROM status LIMIT 1
+) AND NOT EXISTS (
+    SELECT 1 FROM users LIMIT 1
+) AND NOT EXISTS (
+    SELECT 1 FROM prices LIMIT 1
+) AND NOT EXISTS (
+    SELECT 1 FROM auctions LIMIT 1
+) AND NOT EXISTS (
+    SELECT 1 FROM filled_auctions LIMIT 1
+);
