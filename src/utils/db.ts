@@ -260,15 +260,14 @@ export class AuctioneerDatabase {
 
   /**
    * Get all users in the database with a health factor under a certain value.
-   * @param pool_id - The pool id the user belongs to
    * @param health_factor - The health factor to filter by
    * @returns An array user entries, or an empty array if none are found
    */
-  getUserEntriesUnderHealthFactor(pool_id: string, health_factor: number): UserEntry[] {
+  getUserEntriesUnderHealthFactor(health_factor: number): UserEntry[] {
     try {
       let entries: any[] = this.db
-        .prepare('SELECT * FROM users WHERE health_factor < ? AND pool_id = ?')
-        .all(health_factor, pool_id);
+        .prepare('SELECT * FROM users WHERE health_factor < ?')
+        .all(health_factor);
       return entries.map((entry) => {
         return {
           pool_id: entry.pool_id,
@@ -348,11 +347,11 @@ export class AuctioneerDatabase {
    * @param ledger - The ledger to filter by
    * @returns An array user entries, or an empty array if none are found
    */
-  getUserEntriesUpdatedBefore(poolId: string, ledger: number, limit: number = 10): UserEntry[] {
+  getUserEntriesUpdatedBefore(ledger: number, limit: number = 10): UserEntry[] {
     try {
       let entries: any[] = this.db
-        .prepare('SELECT * FROM users WHERE updated < ? AND pool_id = ? LIMIT ? ')
-        .all(ledger, poolId, limit);
+        .prepare('SELECT * FROM users WHERE updated < ? LIMIT ? ')
+        .all(ledger, limit);
       return entries.map((entry) => {
         return {
           pool_id: entry.pool_id,
@@ -442,13 +441,12 @@ export class AuctioneerDatabase {
   }
 
   /**
-   * Get all ongoing `pool_id` auctions from the database
-   * @param pool_id - The pool id that auctions must belong to
+   * Get all ongoing auctions from the database
    * @returns The result of the sql operation
    */
-  getAllAuctionEntries(pool_id: string): AuctionEntry[] {
+  getAllAuctionEntries(): AuctionEntry[] {
     try {
-      let entries: any[] = this.db.prepare('SELECT * FROM auctions WHERE pool_id = ?').all(pool_id);
+      let entries: any[] = this.db.prepare('SELECT * FROM auctions').all();
       return entries.map((entry) => {
         return {
           pool_id: entry.pool_id,

@@ -9,6 +9,7 @@ export enum EventType {
   POOL_EVENT = 'pool_event',
   USER_REFRESH = 'user_refresh',
   CHECK_USER = 'check_user',
+  DB_MIGRATION_V2 = 'db_migration_v2',
 }
 
 // ********* Shared **********
@@ -21,7 +22,8 @@ export type AppEvent =
   | LiqScanEvent
   | PoolEventEvent
   | UserRefreshEvent
-  | CheckUserEvent;
+  | CheckUserEvent
+  | DBMigrationV2Event;
 
 /**
  * Base interface for all events.
@@ -36,7 +38,6 @@ export interface BaseEvent {
  */
 export interface LedgerEvent extends BaseEvent {
   type: EventType.LEDGER;
-  poolConfig: PoolConfig;
   ledger: number;
 }
 
@@ -45,7 +46,6 @@ export interface LedgerEvent extends BaseEvent {
  */
 export interface PoolEventEvent extends BaseEvent {
   type: EventType.POOL_EVENT;
-  poolConfig: PoolConfig;
   event: PoolEvent;
 }
 
@@ -68,7 +68,6 @@ export interface PriceUpdateEvent extends BaseEvent {
  */
 export interface OracleScanEvent extends BaseEvent {
   type: EventType.ORACLE_SCAN;
-  poolConfig: PoolConfig;
 }
 
 /**
@@ -76,7 +75,6 @@ export interface OracleScanEvent extends BaseEvent {
  */
 export interface LiqScanEvent extends BaseEvent {
   type: EventType.LIQ_SCAN;
-  poolConfig: PoolConfig;
 }
 
 /**
@@ -84,7 +82,6 @@ export interface LiqScanEvent extends BaseEvent {
  */
 export interface UserRefreshEvent extends BaseEvent {
   type: EventType.USER_REFRESH;
-  poolConfig: PoolConfig;
   /**
    * The cutoff ledger such that any user data older than this will be refreshed.
    */
@@ -101,4 +98,12 @@ export interface CheckUserEvent extends BaseEvent {
    * The user to check.
    */
   userId: string;
+}
+
+/**
+ * Event to run a database migration.
+ */
+export interface DBMigrationV2Event extends BaseEvent {
+  type: EventType.DB_MIGRATION_V2;
+  poolConfigs: PoolConfig[];
 }

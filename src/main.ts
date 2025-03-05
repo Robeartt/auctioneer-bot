@@ -2,6 +2,7 @@ import { rpc } from '@stellar/stellar-sdk';
 import { fork } from 'child_process';
 import { runCollector } from './collector.js';
 import {
+  DBMigrationV2Event,
   EventType,
   OracleScanEvent,
   PriceUpdateEvent,
@@ -80,6 +81,14 @@ async function main() {
 
   console.log('Auctioneer started successfully.');
 
+  // Check if the database requires a v2 migration
+  const dbMigrationEvent: DBMigrationV2Event = {
+    type: EventType.DB_MIGRATION_V2,
+    timestamp: Date.now(),
+    poolConfigs: APP_CONFIG.poolConfigs,
+  };
+  sendEvent(worker, dbMigrationEvent);
+
   // validate pool configs on startup
   const validatePoolsEvent: ValidatePoolsEvent = {
     type: EventType.VALIDATE_POOLS,
@@ -95,23 +104,19 @@ async function main() {
   };
   sendEvent(worker, priceEvent);
 
-  for (const poolConfig of APP_CONFIG.poolConfigs) {
-    // update price on startup
-    const oracleEvent: OracleScanEvent = {
-      type: EventType.ORACLE_SCAN,
-      timestamp: Date.now(),
-      poolConfig,
-    };
-    sendEvent(worker, oracleEvent);
-    // pull in new manually added users (updated ledger = 0)
-    const userEvent: UserRefreshEvent = {
-      type: EventType.USER_REFRESH,
-      timestamp: Date.now(),
-      cutoff: 0,
-      poolConfig,
-    };
-    sendEvent(worker, userEvent);
-  }
+  // update price on startup
+  const oracleEvent: OracleScanEvent = {
+    type: EventType.ORACLE_SCAN,
+    timestamp: Date.now(),
+  };
+  sendEvent(worker, oracleEvent);
+  // pull in new manually added users (updated ledger = 0)
+  const userEvent: UserRefreshEvent = {
+    type: EventType.USER_REFRESH,
+    timestamp: Date.now(),
+    cutoff: 0,
+  };
+  sendEvent(worker, userEvent);
 
   collectorInterval = setInterval(async () => {
     try {

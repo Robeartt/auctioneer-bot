@@ -66,9 +66,7 @@ export async function scanUsers(
   sorobanHelper: SorobanHelper,
   poolConfig: PoolConfig
 ): Promise<WorkSubmission[]> {
-  let users = db
-    .getUserEntriesUnderHealthFactor(poolConfig.poolAddress, 1.2)
-    .map((user) => user.user_id);
+  let users = db.getUserEntriesUnderHealthFactor(1.2).map((user) => user.user_id);
   users.push(poolConfig.backstopAddress);
 
   return checkUsersForLiquidationsAndBadDebt(db, sorobanHelper, poolConfig, users);
@@ -146,7 +144,7 @@ export async function checkUsersForLiquidationsAndBadDebt(
     } catch (e) {
       logger.error(`Error checking user ${user} for bad debt or liquidation: ${e}`);
       sendSlackNotification(
-        poolConfig.poolAddress,
+        poolConfig,
         `Error checking user ${user} for bad debt or liquidation: ${e}`
       );
     }

@@ -43,6 +43,15 @@ export async function runCollector(
       startup_ledger = latestLedger;
     }
     const ledgersProcessed = latestLedger - startup_ledger;
+
+    // new ledger detected
+    const ledger_event: LedgerEvent = {
+      type: EventType.LEDGER,
+      timestamp: Date.now(),
+      ledger: latestLedger,
+    };
+    sendEvent(bidder, ledger_event);
+
     if (ledgersProcessed % 10 === 0) {
       // approx every minute
       const event: PriceUpdateEvent = {
@@ -52,48 +61,38 @@ export async function runCollector(
       sendEvent(worker, event);
     }
 
-    for (const poolConfig of poolConfigs) {
-      // new ledger detected
-      const ledger_event: LedgerEvent = {
-        type: EventType.LEDGER,
+    // send long running work events to worker
+    if (ledgersProcessed % 60 === 0) {
+      // approx every 5m
+      // send an oracle scan event
+      const event: OracleScanEvent = {
+        type: EventType.ORACLE_SCAN,
         timestamp: Date.now(),
-        ledger: latestLedger,
-        poolConfig,
       };
-      sendEvent(bidder, ledger_event);
-      // send long running work events to worker
-      if (ledgersProcessed % 60 === 0) {
-        // approx every 5m
-        // send an oracle scan event
-        const event: OracleScanEvent = {
-          type: EventType.ORACLE_SCAN,
-          timestamp: Date.now(),
-          poolConfig,
-        };
-        sendEvent(worker, event);
-      }
-      if (ledgersProcessed % 1203 === 0) {
-        // approx every 2hr
-        // send a user update event to update any users that have not been updated in ~2 weeks
-        const event: UserRefreshEvent = {
-          type: EventType.USER_REFRESH,
-          timestamp: Date.now(),
-          cutoff: Math.max(latestLedger - 14 * 17280, 0),
-          poolConfig,
-        };
-        sendEvent(worker, event);
-      }
-      if (ledgersProcessed % 1207 === 0) {
-        // approx every 2hr
-        // send a liq scan event
-        const event: LiqScanEvent = {
-          type: EventType.LIQ_SCAN,
-          timestamp: Date.now(),
-          poolConfig,
-        };
-        sendEvent(worker, event);
-      }
+      sendEvent(worker, event);
     }
+
+    if (ledgersProcessed % 1203 === 0) {
+      // approx every 2hr
+      // send a user update event to update any users that have not been updated in ~2 weeks
+      const event: UserRefreshEvent = {
+        type: EventType.USER_REFRESH,
+        timestamp: Date.now(),
+        cutoff: Math.max(latestLedger - 14 * 17280, 0),
+      };
+      sendEvent(worker, event);
+    }
+
+    if (ledgersProcessed % 1207 === 0) {
+      // approx every 2hr
+      // send a liq scan event
+      const event: LiqScanEvent = {
+        type: EventType.LIQ_SCAN,
+        timestamp: Date.now(),
+      };
+      sendEvent(worker, event);
+    }
+
     // fetch events from last ledger and paging token
     // start from the ledger after the last one we processed
     let start_ledger =
@@ -141,7 +140,6 @@ export async function runCollector(
             type: EventType.POOL_EVENT,
             timestamp: Date.now(),
             event: blendPoolEvent,
-            poolConfig,
           };
           logger.info(`Processing pool event: ${stringify(poolEvent)}`);
           await poolEventHandler.processEventWithRetryAndDeadLetter(poolEvent);
