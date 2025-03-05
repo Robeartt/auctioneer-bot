@@ -1,11 +1,4 @@
-import {
-  Auction,
-  PoolUser,
-  Positions,
-  Request,
-  RequestType,
-  Version,
-} from '@blend-capital/blend-sdk';
+import { Auction, PoolUser, Positions, Request, RequestType } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import { AuctionFill, calculateAuctionFill } from '../src/auction';
 import {
@@ -88,11 +81,10 @@ describe('BidderSubmitter', () => {
   >;
 
   let poolConfig: PoolConfig = {
+    name: 'test-pool',
     poolAddress: mockPool.id,
-    backstopAddress: mockPool.metadata.backstop,
     primaryAsset: 'USD',
     minPrimaryCollateral: 123n,
-    version: Version.V1,
   };
 
   beforeEach(() => {
@@ -357,7 +349,7 @@ describe('BidderSubmitter', () => {
         `Filler: ${submission.filler.name}\n`
     );
     expect(mockedSendSlackNotif).toHaveBeenCalledWith(
-      poolConfig.poolAddress,
+      poolConfig,
       `Dropped auction bid\n` +
         `Type: ${AuctionType[submission.auctionEntry.auction_type]}\n` +
         `User: ${submission.auctionEntry.user_id}\n` +
@@ -388,7 +380,7 @@ describe('BidderSubmitter', () => {
       `Dropped filler unwind\n` + `Filler: ${submission.filler.name}\n`
     );
     expect(mockedSendSlackNotif).toHaveBeenCalledWith(
-      poolConfig.poolAddress,
+      poolConfig,
       `Dropped filler unwind\n` + `Filler: ${submission.filler.name}\n`
     );
   });

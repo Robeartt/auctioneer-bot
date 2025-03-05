@@ -1,4 +1,4 @@
-import { Auction, PoolUser, Positions, PositionsEstimate, Version } from '@blend-capital/blend-sdk';
+import { Auction, PoolUser, Positions, PositionsEstimate } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import {
   calculateLiquidationPercent,
@@ -11,7 +11,7 @@ import { APP_CONFIG, PoolConfig } from '../src/utils/config.js';
 import { AuctioneerDatabase } from '../src/utils/db.js';
 import { PoolUserEst, SorobanHelper } from '../src/utils/soroban_helper.js';
 import { WorkSubmissionType } from '../src/work_submitter.js';
-import { inMemoryAuctioneerDb, mockPool, USDC, USDC_ID, XLM, XLM_ID } from './helpers/mocks.js';
+import { inMemoryAuctioneerDb, mockPool, USDC, USDC_ID, XLM_ID } from './helpers/mocks.js';
 
 jest.mock('../src/utils/soroban_helper.js');
 jest.mock('../src/utils/logger.js', () => ({
@@ -129,9 +129,8 @@ describe('scanUsers', () => {
   let mockPoolUserEstimate: PositionsEstimate;
   let mockPoolUser: PoolUser;
   let poolConfig: PoolConfig = {
+    name: 'test-pool',
     poolAddress: mockPool.id,
-    backstopAddress: mockPool.metadata.backstop,
-    version: Version.V1,
     minPrimaryCollateral: 123n,
     primaryAsset: USDC,
   };
@@ -237,7 +236,7 @@ describe('scanUsers', () => {
             estimate: mockPoolUserEstimate,
             user: mockPoolUser,
           } as PoolUserEst);
-        } else if (address === mockPool.metadata.backstop) {
+        } else if (address === APP_CONFIG.backstopAddress) {
           return Promise.resolve({
             estimate: mockBackstopPositionsEstimate,
             user: mockBackstopPositions,
@@ -260,9 +259,8 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
   let mockUser: PoolUser;
   let mockUserEstimate: PositionsEstimate;
   let poolConfig: PoolConfig = {
+    name: 'test-pool',
     poolAddress: mockPool.id,
-    backstopAddress: mockPool.metadata.backstop,
-    version: Version.V1,
     minPrimaryCollateral: 123n,
     primaryAsset: USDC,
   };
@@ -295,7 +293,7 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
   });
 
   it('should handle backstop address user correctly', async () => {
-    const user_ids = [mockPool.metadata.backstop];
+    const user_ids = [APP_CONFIG.backstopAddress];
     mockedSorobanHelper.loadPool.mockResolvedValue(mockPool);
     mockBackstopPositionsEstimate.totalEffectiveLiabilities = 1000;
     mockBackstopPositionsEstimate.totalEffectiveCollateral = 0;
@@ -321,8 +319,6 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
       {
         type: WorkSubmissionType.BadDebtAuction,
         poolConfig,
-        lot: [XLM],
-        bid: [USDC],
       },
     ]);
   });
@@ -359,8 +355,6 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
         poolConfig,
         user: 'user1',
         liquidationPercent: 56n,
-        lot: [XLM],
-        bid: [USDC],
       },
     ]);
   });

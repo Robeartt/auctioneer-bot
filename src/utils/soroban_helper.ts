@@ -70,12 +70,8 @@ export class SorobanHelper {
     if (cachedPool) {
       return cachedPool;
     } else {
-      let pool: Pool | undefined;
-      if (config.version === Version.V1) {
-        pool = await PoolV1.load(this.network, config.poolAddress);
-      } else {
-        pool = await PoolV2.load(this.network, config.poolAddress);
-      }
+      let pool: Pool = await PoolV1.load(this.network, config.poolAddress);
+
       if (pool) {
         this.pool_cache.set(config.poolAddress, pool);
         return pool;

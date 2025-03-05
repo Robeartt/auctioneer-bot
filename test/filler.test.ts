@@ -6,7 +6,6 @@ import {
   PriceData,
   Request,
   RequestType,
-  Version,
 } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import { canFillerBid, getFillerProfitPct, managePositions } from '../src/filler';
@@ -30,13 +29,6 @@ jest.mock('../src/utils/logger.js', () => ({
 
 describe('filler', () => {
   describe('canFillerBid', () => {
-    let poolConfig: PoolConfig = {
-      poolAddress: 'pool1',
-      backstopAddress: 'backstop1',
-      primaryAsset: 'XLM',
-      minPrimaryCollateral: FixedMath.toFixed(100, 7),
-      version: Version.V1,
-    };
     it('returns true if the filler supports the auction', () => {
       const filler: Filler = {
         name: 'Teapot',
@@ -305,11 +297,10 @@ describe('filler', () => {
       53255053
     );
     const poolConfig: PoolConfig = {
+      name: 'test-pool',
       poolAddress: mockPool.id,
-      backstopAddress: mockPool.metadata.backstop,
       primaryAsset: assets[1],
       minPrimaryCollateral: FixedMath.toFixed(100, 7),
-      version: Version.V1,
     };
     const filler: Filler = {
       name: 'Teapot',

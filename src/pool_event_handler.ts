@@ -103,7 +103,7 @@ export class PoolEventHandler {
         if ('user' in poolEvent.event) {
           user = poolEvent.event.user;
         } else {
-          user = poolConfig.backstopAddress;
+          user = APP_CONFIG.backstopAddress;
         }
         // check if the auction should be bid on by an auctioneer
         let fillerFound = false;
@@ -184,7 +184,7 @@ export class PoolEventHandler {
             type: EventType.CHECK_USER,
             timestamp: Date.now(),
             poolConfig: poolConfig,
-            userId: poolConfig.backstopAddress,
+            userId: APP_CONFIG.backstopAddress,
           });
         }
         break;
@@ -199,7 +199,7 @@ export class PoolEventHandler {
           type: EventType.CHECK_USER,
           timestamp: Date.now(),
           poolConfig: poolConfig,
-          userId: poolConfig.backstopAddress,
+          userId: APP_CONFIG.backstopAddress,
         });
         break;
       }

@@ -36,14 +36,10 @@ export interface UserLiquidation extends BaseWorkSubmission {
   type: WorkSubmissionType.LiquidateUser;
   user: string;
   liquidationPercent: bigint;
-  lot: string[];
-  bid: string[];
 }
 
 export interface BadDebtAuction extends BaseWorkSubmission {
   type: WorkSubmissionType.BadDebtAuction;
-  lot: string[];
-  bid: string[];
 }
 
 export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
@@ -76,22 +72,13 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
     try {
       logger.info(`Creating liquidation for user: ${userLiquidation.user}`);
       let op: string;
-      if (userLiquidation.poolConfig.version === Version.V2) {
-        const pool = new PoolContractV2(userLiquidation.poolConfig.poolAddress);
-        op = pool.newAuction({
-          user: userLiquidation.user,
-          percent: FixedMath.toFloat(userLiquidation.liquidationPercent, 0),
-          auction_type: AuctionType.Liquidation,
-          bid: userLiquidation.bid,
-          lot: userLiquidation.lot,
-        });
-      } else {
-        const pool = new PoolContractV1(userLiquidation.poolConfig.poolAddress);
-        op = pool.newLiquidationAuction({
-          user: userLiquidation.user,
-          percent_liquidated: userLiquidation.liquidationPercent,
-        });
-      }
+
+      const pool = new PoolContractV1(userLiquidation.poolConfig.poolAddress);
+      op = pool.newLiquidationAuction({
+        user: userLiquidation.user,
+        percent_liquidated: userLiquidation.liquidationPercent,
+      });
+
       const auctionExists =
         (await sorobanHelper.loadAuction(
           userLiquidation.poolConfig,
@@ -142,10 +129,7 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
   ): Promise<boolean> {
     try {
       logger.info(`Transferring bad debt to backstop for user: ${badDebtTransfer.user}`);
-      const pool =
-        badDebtTransfer.poolConfig.version === Version.V2
-          ? new PoolContractV2(badDebtTransfer.poolConfig.poolAddress)
-          : new PoolContractV1(badDebtTransfer.poolConfig.poolAddress);
+      const pool = new PoolContractV1(badDebtTransfer.poolConfig.poolAddress);
       let op = pool.badDebt(badDebtTransfer.user);
       await sorobanHelper.submitTransaction(op, APP_CONFIG.keypair);
       const logMessage = `Successfully transferred bad debt to backstop for user: ${badDebtTransfer.user}`;
@@ -169,24 +153,14 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
   ): Promise<boolean> {
     try {
       logger.info(`Creating bad debt auction`);
-      let op: string;
-      if (submission.poolConfig.version === Version.V2) {
-        const pool = new PoolContractV2(submission.poolConfig.poolAddress);
-        op = pool.newAuction({
-          user: submission.poolConfig.backstopAddress,
-          percent: 100,
-          auction_type: AuctionType.BadDebt,
-          bid: submission.bid,
-          lot: submission.lot,
-        });
-      } else {
-        const pool = new PoolContractV1(submission.poolConfig.poolAddress);
-        op = pool.newBadDebtAuction();
-      }
+
+      const pool = new PoolContractV1(submission.poolConfig.poolAddress);
+      const op = pool.newBadDebtAuction();
+
       const auctionExists =
         (await sorobanHelper.loadAuction(
           submission.poolConfig,
-          submission.poolConfig.backstopAddress,
+          APP_CONFIG.backstopAddress,
           AuctionType.BadDebt
         )) !== undefined;
       if (auctionExists) {

@@ -1,10 +1,4 @@
-import {
-  Auction,
-  ContractError,
-  ContractErrorType,
-  FixedMath,
-  Version,
-} from '@blend-capital/blend-sdk';
+import { Auction, ContractError, ContractErrorType, FixedMath } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import { AppConfig, PoolConfig } from '../src/utils/config';
 import { AuctionType } from '../src/utils/db';
@@ -42,9 +36,8 @@ describe('WorkSubmitter', () => {
     typeof sendSlackNotification
   >;
   const poolConfig: PoolConfig = {
+    name: 'test-pool',
     poolAddress: mockPool.id,
-    backstopAddress: mockPool.metadata.backstop,
-    version: Version.V1,
     minPrimaryCollateral: FixedMath.toFixed(100, 7),
     primaryAsset: USDC,
   };
@@ -258,8 +251,6 @@ describe('WorkSubmitter', () => {
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtAuction,
       poolConfig,
-      lot: [],
-      bid: [],
     };
     const result = await workSubmitter.submit(submission);
 
@@ -281,8 +272,6 @@ describe('WorkSubmitter', () => {
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtAuction,
       poolConfig,
-      lot: [],
-      bid: [],
     };
     const result = await workSubmitter.submit(submission);
 
@@ -325,8 +314,6 @@ describe('WorkSubmitter', () => {
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtAuction,
       poolConfig,
-      lot: [],
-      bid: [],
     };
 
     workSubmitter.onDrop(submission);

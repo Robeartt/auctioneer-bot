@@ -105,10 +105,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       );
 
       if (nextLedger >= fill.block) {
-        const pool =
-          auctionBid.poolConfig.version === Version.V2
-            ? new PoolContractV2(auctionBid.poolConfig.poolAddress)
-            : new PoolContractV1(auctionBid.poolConfig.poolAddress);
+        const pool = new PoolContractV1(auctionBid.poolConfig.poolAddress);
 
         const result = await sorobanHelper.submitTransaction(
           pool.submit({
@@ -219,10 +216,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
     if (requests.length > 0) {
       logger.info('Unwind found positions to manage', requests);
       // some positions to manage - submit the transaction
-      const pool =
-        fillerUnwind.poolConfig.version === Version.V2
-          ? new PoolContractV2(fillerUnwind.poolConfig.poolAddress)
-          : new PoolContractV1(fillerUnwind.poolConfig.poolAddress);
+      const pool = new PoolContractV1(fillerUnwind.poolConfig.poolAddress);
       const result = await sorobanHelper.submitTransaction(
         pool.submit({
           from: filler_pubkey,

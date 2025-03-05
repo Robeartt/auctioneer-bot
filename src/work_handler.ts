@@ -80,12 +80,7 @@ export class WorkHandler {
       case EventType.VALIDATE_POOLS: {
         for (const config of appEvent.pools) {
           try {
-            const pool = await this.sorobanHelper.loadPool(config);
-            if (pool.metadata.backstop !== config.backstopAddress) {
-              throw new Error(
-                `Pool backstop address ${pool.metadata.backstop} does not match config ${config.backstopAddress}`
-              );
-            }
+            await this.sorobanHelper.loadPool(config);
           } catch (error) {
             throw new Error(
               `Failed to load pool: ${config.poolAddress} please check that the pool config is correct. Error: ${error}`

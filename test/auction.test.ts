@@ -6,7 +6,6 @@ import {
   PoolUser,
   PositionsEstimate,
   Request,
-  Version,
 } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import { calculateAuctionFill, valueBackstopTokenInUSDC } from '../src/auction.js';
@@ -101,9 +100,8 @@ describe('auctions', () => {
   describe('calcAuctionFill', () => {
     // *** Interest Auctions ***
     const poolConfig: PoolConfig = {
+      name: 'test-pool',
       poolAddress: mockPool.id,
-      backstopAddress: mockPool.metadata.backstop,
-      version: Version.V1,
       minPrimaryCollateral: 123n,
       primaryAsset: USDC,
     };

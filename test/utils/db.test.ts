@@ -137,7 +137,7 @@ describe('AuctioneerDatabase', () => {
       updated: Date.now(),
     };
     db.setUserEntry(user2);
-    const result = db.getUserEntriesUnderHealthFactor(user2.pool_id, 1.0);
+    const result = db.getUserEntriesUnderHealthFactor(1.0);
     expect(result).toContainEqual(user1);
   });
 
@@ -206,7 +206,7 @@ describe('AuctioneerDatabase', () => {
       updated: 200,
     };
     db.setUserEntry(user2);
-    const result = db.getUserEntriesUpdatedBefore('pool1', 200);
+    const result = db.getUserEntriesUpdatedBefore(200);
     expect(result).toContainEqual(user1);
   });
 
@@ -222,7 +222,7 @@ describe('AuctioneerDatabase', () => {
       updated: Date.now(),
     };
     db.setAuctionEntry(entry);
-    const result = db.getAllAuctionEntries('pool1');
+    const result = db.getAllAuctionEntries();
     expect(result).toContainEqual(entry);
   });
 
@@ -269,7 +269,7 @@ describe('AuctioneerDatabase', () => {
     };
     db.setAuctionEntry(entry2);
     db.deleteAuctionEntry(entry1.pool_id, entry1.user_id, entry1.auction_type);
-    const result = db.getAllAuctionEntries('pool1');
+    const result = db.getAllAuctionEntries();
     expect(result).not.toContainEqual(entry1);
   });
 
@@ -337,7 +337,7 @@ describe('AuctioneerDatabase', () => {
       all: jest.fn().mockReturnValue(entries),
     });
 
-    const result = db.getAllAuctionEntries('pool1');
+    const result = db.getAllAuctionEntries();
     expect(result).toEqual(entries);
   });
 
@@ -354,7 +354,7 @@ describe('AuctioneerDatabase', () => {
     // Mock the logger
     logger.error = jest.fn();
 
-    expect(() => db.getAllAuctionEntries('pool1')).toThrow(error);
+    expect(() => db.getAllAuctionEntries()).toThrow(error);
     expect(logger.error).toHaveBeenCalledWith(`Error getting all auction entries: ${error}`);
   });
 });

@@ -1,4 +1,4 @@
-import { PoolOracle, Version } from '@blend-capital/blend-sdk';
+import { PoolOracle } from '@blend-capital/blend-sdk';
 import { AppEvent, EventType, OracleScanEvent } from '../src/events';
 import { checkUsersForLiquidationsAndBadDebt } from '../src/liquidations';
 import { OracleHistory } from '../src/oracle_history';
@@ -6,7 +6,7 @@ import { AuctioneerDatabase, UserEntry } from '../src/utils/db';
 import { SorobanHelper } from '../src/utils/soroban_helper';
 import { WorkHandler } from '../src/work_handler';
 import { WorkSubmission, WorkSubmissionType, WorkSubmitter } from '../src/work_submitter';
-import { PoolConfig } from '../src/utils/config';
+import { AppConfig, PoolConfig } from '../src/utils/config';
 
 jest.mock('../src/utils/prices');
 jest.mock('../src/liquidations');
@@ -14,7 +14,21 @@ jest.mock('../src/user');
 jest.mock('../src/utils/messages');
 jest.mock('../src/utils/logger');
 jest.mock('../src/utils/soroban_helper');
-
+jest.mock('../src/utils/config.js', () => {
+  let config: AppConfig = {
+    poolConfigs: [
+      {
+        name: 'test-pool',
+        poolAddress: 'pool1',
+        primaryAsset: 'asset1',
+        minPrimaryCollateral: 123n,
+      },
+    ],
+  } as AppConfig;
+  return {
+    APP_CONFIG: config,
+  };
+});
 describe('WorkHandler', () => {
   let db: jest.Mocked<AuctioneerDatabase>;
   let submissionQueue: jest.Mocked<WorkSubmitter>;
@@ -48,15 +62,13 @@ describe('WorkHandler', () => {
 
   it('should handle ORACLE_SCAN event', async () => {
     const poolConfig: PoolConfig = {
+      name: 'test-pool',
       poolAddress: 'pool1',
-      backstopAddress: 'backstop1',
       primaryAsset: 'asset1',
       minPrimaryCollateral: 123n,
-      version: Version.V1,
     };
     const appEvent: AppEvent = {
       type: EventType.ORACLE_SCAN,
-      poolConfig,
     } as OracleScanEvent;
     const poolOracle = new PoolOracle('', new Map(), 7, 0);
     const priceChanges = { up: ['asset1'], down: ['asset2'] };
@@ -83,17 +95,14 @@ describe('WorkHandler', () => {
     const liquidations: WorkSubmission[] = [
       {
         poolConfig: {
+          name: 'test-pool',
           poolAddress: 'pool1',
-          backstopAddress: 'backstop1',
           primaryAsset: 'asset1',
           minPrimaryCollateral: 123n,
-          version: Version.V1,
         },
         user: 'user1',
         type: WorkSubmissionType.LiquidateUser,
         liquidationPercent: 10n,
-        lot: ['asset2'],
-        bid: ['asset1'],
       },
     ];
     sorobanHelper.loadPoolOracle.mockResolvedValue(poolOracle);

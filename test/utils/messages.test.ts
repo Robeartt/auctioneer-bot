@@ -4,7 +4,6 @@ import { sendEvent, readEvent, deadletterEvent } from '../../src/utils/messages'
 import { AppEvent, EventType } from '../../src/events';
 import { parse, stringify } from '../../src/utils/json';
 import { logger } from '../../src/utils/logger';
-import { Version } from '@blend-capital/blend-sdk';
 
 jest.mock('fs/promises', () => ({
   appendFile: jest.fn(),
@@ -41,13 +40,6 @@ describe('messages.ts', () => {
         type: EventType.LEDGER,
         ledger: 123,
         timestamp: Date.now(),
-        poolConfig: {
-          poolAddress: 'poolAddress',
-          backstopAddress: 'backstopAddress',
-          minPrimaryCollateral: 0n,
-          primaryAsset: 'primaryAsset',
-          version: Version.V1,
-        },
       };
       const as_string = stringify(event);
 
@@ -69,13 +61,6 @@ describe('messages.ts', () => {
         type: EventType.LEDGER,
         ledger: 123,
         timestamp: Date.now(),
-        poolConfig: {
-          poolAddress: 'poolAddress',
-          backstopAddress: 'backstopAddress',
-          minPrimaryCollateral: 0n,
-          primaryAsset: 'primaryAsset',
-          version: Version.V1,
-        },
       };
       (parse as jest.Mock).mockReturnValue(event);
 
@@ -117,13 +102,6 @@ describe('messages.ts', () => {
         type: EventType.LEDGER,
         ledger: 123,
         timestamp: Date.now(),
-        poolConfig: {
-          poolAddress: 'poolAddress',
-          backstopAddress: 'backstopAddress',
-          minPrimaryCollateral: 0n,
-          primaryAsset: 'primaryAsset',
-          version: Version.V1,
-        },
       };
       const as_string = stringify(event);
 
@@ -138,13 +116,6 @@ describe('messages.ts', () => {
         type: EventType.LEDGER,
         ledger: 123,
         timestamp: Date.now(),
-        poolConfig: {
-          poolAddress: 'poolAddress',
-          backstopAddress: 'backstopAddress',
-          minPrimaryCollateral: 0n,
-          primaryAsset: 'primaryAsset',
-          version: Version.V1,
-        },
       }; // Example event};
       const as_string = stringify(event);
       const error = new Error('append error');

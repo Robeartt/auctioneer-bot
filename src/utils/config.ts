@@ -47,8 +47,6 @@ export interface AuctionProfit {
 export interface PoolConfig {
   name: string;
   poolAddress: string;
-  backstopAddress: string;
-  version: Version;
   minPrimaryCollateral: bigint;
   primaryAsset: string;
 }
@@ -58,6 +56,7 @@ export interface AppConfig {
   rpcURL: string;
   networkPassphrase: string;
   backstopTokenAddress: string;
+  backstopAddress: string;
   usdcAddress: string;
   blndAddress: string;
   keypair: Keypair;
@@ -88,6 +87,7 @@ export function validateAppConfig(config: any): boolean {
     typeof config.name !== 'string' ||
     typeof config.rpcURL !== 'string' ||
     typeof config.networkPassphrase !== 'string' ||
+    typeof config.backstopAddress !== 'string' ||
     typeof config.backstopTokenAddress !== 'string' ||
     typeof config.usdcAddress !== 'string' ||
     typeof config.blndAddress !== 'string' ||
@@ -192,13 +192,6 @@ export function validateAuctionProfit(profits: any): boolean {
   return false;
 }
 
-export function validateVersion(version: any): boolean {
-  if (typeof version !== 'string') {
-    return false;
-  }
-  return version === Version.V1 || version === Version.V2;
-}
-
 export function validatePoolConfig(config: any): boolean {
   if (typeof config !== 'object' || config === null) {
     return false;
@@ -207,8 +200,6 @@ export function validatePoolConfig(config: any): boolean {
   if (
     typeof config.name !== 'string' ||
     typeof config.poolAddress !== 'string' ||
-    typeof config.backstopAddress !== 'string' ||
-    !validateVersion(config.version) ||
     typeof config.minPrimaryCollateral !== 'string' ||
     typeof config.primaryAsset !== 'string'
   ) {

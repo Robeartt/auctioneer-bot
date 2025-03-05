@@ -1,10 +1,10 @@
-import { Auction, Version } from '@blend-capital/blend-sdk';
+import { Auction } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import { AuctionFill, calculateAuctionFill } from '../src/auction';
 import { BidderHandler } from '../src/bidder_handler';
 import { AuctionBid, BidderSubmissionType, BidderSubmitter } from '../src/bidder_submitter';
 import { AppEvent, EventType, LedgerEvent } from '../src/events';
-import { APP_CONFIG, AppConfig, PoolConfig } from '../src/utils/config';
+import { APP_CONFIG, AppConfig } from '../src/utils/config';
 import { AuctioneerDatabase, AuctionEntry, AuctionType } from '../src/utils/db';
 import { logger } from '../src/utils/logger';
 import { sendSlackNotification } from '../src/utils/slack_notifier';
@@ -43,15 +43,11 @@ jest.mock('../src/utils/config.js', () => {
     poolConfigs: [
       {
         poolAddress: 'pool1',
-        backstopAddress: 'backstop',
-        version: Version.V1,
         primaryAsset: 'USD',
         minPrimaryCollateral: 100n,
       },
       {
         poolAddress: 'pool2',
-        backstopAddress: 'backstop',
-        version: Version.V1,
         primaryAsset: 'USD',
         minPrimaryCollateral: 100n,
       },
@@ -128,13 +124,11 @@ describe('BidderHandler', () => {
     const Pool1AppEvent: AppEvent = {
       type: EventType.LEDGER,
       ledger,
-      poolConfig: APP_CONFIG.poolConfigs[0],
     } as LedgerEvent;
     await bidderHandler.processEvent(Pool1AppEvent);
     const Pool2AppEvent: AppEvent = {
       type: EventType.LEDGER,
       ledger,
-      poolConfig: APP_CONFIG.poolConfigs[1],
     } as LedgerEvent;
     await bidderHandler.processEvent(Pool2AppEvent);
 
@@ -207,12 +201,11 @@ describe('BidderHandler', () => {
       bidValue: 900,
       requests: [],
     };
-    mockedCalcAuctionFill.mockResolvedValueOnce(fill_calc_2).mockResolvedValueOnce(fill_calc_1);
+    mockedCalcAuctionFill.mockResolvedValueOnce(fill_calc_1).mockResolvedValueOnce(fill_calc_2);
 
     const appEvent: AppEvent = {
       type: EventType.LEDGER,
       ledger,
-      poolConfig: APP_CONFIG.poolConfigs[0],
     } as LedgerEvent;
     await bidderHandler.processEvent(appEvent);
 
@@ -279,12 +272,11 @@ describe('BidderHandler', () => {
       bidValue: 900,
       requests: [],
     };
-    mockedCalcAuctionFill.mockResolvedValueOnce(fill_calc_2).mockResolvedValueOnce(fill_calc_1);
+    mockedCalcAuctionFill.mockResolvedValueOnce(fill_calc_1).mockResolvedValueOnce(fill_calc_2);
 
     const appEvent: AppEvent = {
       type: EventType.LEDGER,
       ledger,
-      poolConfig: APP_CONFIG.poolConfigs[0],
     } as LedgerEvent;
     await bidderHandler.processEvent(appEvent);
 
@@ -389,14 +381,14 @@ describe('BidderHandler', () => {
     db.setAuctionEntry(auction_1);
     db.setAuctionEntry(auction_2);
     mockedSorobanHelper.loadAuction
+      .mockRejectedValueOnce(new Error('teapot'))
       .mockResolvedValueOnce(
         new Auction('teapot', AuctionType.Liquidation, {
           bid: new Map<string, bigint>(),
           lot: new Map<string, bigint>(),
           block: ledger - 1,
         })
-      )
-      .mockRejectedValueOnce(new Error('teapot'));
+      );
     let fill_calc_2: AuctionFill = {
       block: 1002,
       percent: 60,
@@ -409,7 +401,6 @@ describe('BidderHandler', () => {
     const appEvent1: AppEvent = {
       type: EventType.LEDGER,
       ledger,
-      poolConfig: APP_CONFIG.poolConfigs[0],
     } as LedgerEvent;
     await bidderHandler.processEvent(appEvent1);
 

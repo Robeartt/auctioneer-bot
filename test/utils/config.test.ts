@@ -1,13 +1,11 @@
 // config.test.ts
 import { Keypair } from '@stellar/stellar-sdk';
 import {
-  AppConfig,
   validateAppConfig,
   validateAuctionProfit,
   validateFiller,
   validatePoolConfig,
   validatePriceSource,
-  validateVersion,
 } from '../../src/utils/config';
 
 describe('validateAppConfig', () => {
@@ -40,15 +38,15 @@ describe('validateAppConfig', () => {
       name: 'App',
       rpcURL: 'http://localhost',
       networkPassphrase: 'Test',
+      backstopAddress: 'backstop',
       backstopTokenAddress: 'token',
       usdcAddress: 'usdc',
       blndAddress: 'blnd',
       keypair: Keypair.random().secret(),
       poolConfigs: [
         {
+          name: 'test-pool',
           poolAddress: 'pool',
-          backstopAddress: 'backstop',
-          version: 'V1',
           primaryAsset: 'asset',
           minPrimaryCollateral: '100',
         },
@@ -181,22 +179,6 @@ describe('validateAuctionProfit', () => {
   });
 });
 
-describe('validateVersion', () => {
-  it('should return false for non-string version', () => {
-    expect(validateVersion(null)).toBe(false);
-    expect(validateVersion(123)).toBe(false);
-  });
-
-  it('should return false for invalid version', () => {
-    expect(validateVersion('invalidVersion')).toBe(false);
-  });
-
-  it('should return true for valid version', () => {
-    expect(validateVersion('V1')).toBe(true);
-    expect(validateVersion('V2')).toBe(true);
-  });
-});
-
 describe('validatePoolConfig', () => {
   it('should return false for non-object config', () => {
     expect(validatePoolConfig(null)).toBe(false);
@@ -216,9 +198,8 @@ describe('validatePoolConfig', () => {
 
   it('should return true for valid config', () => {
     const validConfig = {
+      name: 'test-pool',
       poolAddress: 'pool',
-      backstopAddress: 'backstop',
-      version: 'V1',
       primaryAsset: 'asset',
       minPrimaryCollateral: '100',
     };
