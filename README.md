@@ -48,17 +48,26 @@ For an example config file that is configured to interact with [Blend v1 mainnet
 | `name` | A descriptive name for your bot instance. |
 | `rpcURL` | The URL of the Soroban RPC endpoint. |
 | `networkPassphrase` | The network passphrase identifying the Stellar network. |
-| `poolAddress` | The address of the Blend pool contract this bot will be tracking. |
 | `backstopAddress` | The address of the Blend backstop contract. |
 | `backstopTokenAddress` | The address of the Blend backstop token contract. |
 | `usdcAddress` | The address of the USDC token contract. |
 | `blndAddress` | The address of the BLND token contract. |
 | `keypair` | The secret key for the bot's auction creating account. This should be different from the fillers as auction creation and auction bidding can happen simultaneously. **Keep this secret and secure!** |
+| `poolConfigs` | A list of configs that dicate what pools are monitored |
 | `fillers` | A list of accounts that will bid and fill on auctions. |
-| `version` | The version of the protocol to interact with. Possible values are `V1` or `V2`. |
 | `priceSources` | (Optional) A list of assets that will have prices sourced from exchanges instead of the pool oracle. |
 | `profits` | (Optional) A list of auction profits to define different profit percentages used for matching auctions.
 | `slackWebhook` | (Optional) A slack webhook URL to post updates to (https://hooks.slack.com/services/). Leave undefined if no webhooks are required. |
+
+#### Pool Configs
+The `poolConfigs` array contains configurations for pools that are to be monitored.
+
+| Field | Description |
+|-------|-------------|
+| `name` | A unique name for this pool. Used in logs and slack notifications. |
+| `poolAddress` | The address of the pool |
+| `primaryAsset` | The primary asset that will be used as collateral in the pool. | 
+| `minPrimaryCollateral` | The minimum amount of the primary asset that is maintained as collateral in the pool. |
 
 #### Fillers
 

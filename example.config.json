@@ -9,16 +9,21 @@
   "usdcAddress": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
   "blndAddress": "CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY",
   "keypair": "S...",
-  "version": "V1",
+  "poolConfigs": [
+    {
+      "name": "pool name",
+      "poolAddress": "C...",
+      "minPrimaryCollateral": "10000000000",
+      "primaryAsset": "C..."
+    }
+  ],
   "fillers": [
     {
       "name": "example-liquidator",
       "keypair": "S...",
-      "defaultProfitPct": 0.10,
+      "defaultProfitPct": 0.1,
       "minHealthFactor": 1.5,
       "forceFill": true,
-      "primaryAsset": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
-      "minPrimaryCollateral": "10000000000",
       "supportedBid": [
         "CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM",
         "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
