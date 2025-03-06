@@ -63,13 +63,26 @@ export function calculateLiquidationPercent(user: PositionsEstimate): bigint {
  */
 export async function scanUsers(
   db: AuctioneerDatabase,
-  sorobanHelper: SorobanHelper,
-  poolConfig: PoolConfig
+  sorobanHelper: SorobanHelper
 ): Promise<WorkSubmission[]> {
-  let users = db.getUserEntriesUnderHealthFactor(1.2).map((user) => user.user_id);
-  users.push(APP_CONFIG.backstopAddress);
+  let userPoolMap = new Map<string, string[]>();
+  let users = db.getUserEntriesUnderHealthFactor(1.2);
+  for (const user of users) {
+    if (!userPoolMap.has(user.pool_id)) {
+      userPoolMap.set(user.pool_id, []);
+    }
+    userPoolMap.get(user.pool_id)!.push(user.user_id);
+  }
 
-  return checkUsersForLiquidationsAndBadDebt(db, sorobanHelper, poolConfig, users);
+  let submissions: WorkSubmission[] = [];
+  for (const poolConfig of APP_CONFIG.poolConfigs) {
+    const users = userPoolMap.get(poolConfig.poolAddress) || [];
+    users.push(APP_CONFIG.backstopAddress);
+    submissions.push(
+      ...(await checkUsersForLiquidationsAndBadDebt(db, sorobanHelper, poolConfig, users))
+    );
+  }
+  return submissions;
 }
 
 /**

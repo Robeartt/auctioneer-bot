@@ -80,7 +80,12 @@ export class WorkHandler {
       case EventType.VALIDATE_POOLS: {
         for (const config of appEvent.pools) {
           try {
-            await this.sorobanHelper.loadPool(config);
+            let pool = await this.sorobanHelper.loadPool(config);
+            if (pool.metadata.backstop !== APP_CONFIG.backstopAddress) {
+              throw new Error(
+                `Backstop address for pool: ${config.poolAddress} is not the expected address: ${APP_CONFIG.backstopAddress}`
+              );
+            }
           } catch (error) {
             throw new Error(
               `Failed to load pool: ${config.poolAddress} please check that the pool config is correct. Error: ${error}`
@@ -95,9 +100,8 @@ export class WorkHandler {
         break;
       }
       case EventType.ORACLE_SCAN: {
-        let usersToCheck = new Set<string>();
-        const test = new Map<string, Set<string>>();
         for (const poolConfig of APP_CONFIG.poolConfigs) {
+          let usersToCheck = new Set<string>();
           const poolOracle = await this.sorobanHelper.loadPoolOracle(poolConfig);
           const priceChanges = this.oracleHistory.getSignificantPriceChanges(poolOracle);
           // @dev: Insert into a set to ensure uniqueness
@@ -132,11 +136,9 @@ export class WorkHandler {
         break;
       }
       case EventType.LIQ_SCAN: {
-        for (const poolConfig of APP_CONFIG.poolConfigs) {
-          const liquidations = await scanUsers(this.db, this.sorobanHelper, poolConfig);
-          for (const liquidation of liquidations) {
-            this.submissionQueue.addSubmission(liquidation, 3);
-          }
+        const liquidations = await scanUsers(this.db, this.sorobanHelper);
+        for (const liquidation of liquidations) {
+          this.submissionQueue.addSubmission(liquidation, 3);
         }
         break;
       }
