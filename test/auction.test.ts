@@ -794,11 +794,7 @@ describe('auctions', () => {
         lpTokenPrice: 1.25,
       } as BackstopToken);
 
-      let value = await valueBackstopTokenInUSDC(
-        mockedSorobanHelper,
-        'backstop',
-        FixedMath.toFixed(2)
-      );
+      let value = await valueBackstopTokenInUSDC(mockedSorobanHelper, FixedMath.toFixed(2));
 
       expect(value).toEqual(lpTokenToUSDC);
       expect(mockedSorobanHelper.loadBackstopToken).toHaveBeenCalledTimes(0);
@@ -810,11 +806,7 @@ describe('auctions', () => {
         lpTokenPrice: 1.25,
       } as BackstopToken);
 
-      let value = await valueBackstopTokenInUSDC(
-        mockedSorobanHelper,
-        'backstop',
-        FixedMath.toFixed(2)
-      );
+      let value = await valueBackstopTokenInUSDC(mockedSorobanHelper, FixedMath.toFixed(2));
 
       expect(value).toEqual(1.25 * 2);
       expect(mockedSorobanHelper.loadBackstopToken).toHaveBeenCalledTimes(1);

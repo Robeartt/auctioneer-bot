@@ -379,7 +379,7 @@ export async function calculateAuctionValue(
           `Unexpected bad debt auction. Lot contains asset other than the backstop token: ${assetId}`
         );
       }
-      lotValue += await valueBackstopTokenInUSDC(sorobanHelper, pool.metadata.backstop, amount);
+      lotValue += await valueBackstopTokenInUSDC(sorobanHelper, amount);
     } else {
       throw new Error(`Failed to value lot asset: ${assetId}`);
     }
@@ -404,7 +404,7 @@ export async function calculateAuctionValue(
           `Unexpected interest auction. Bid contains asset other than the backstop token: ${assetId}`
         );
       }
-      bidValue += await valueBackstopTokenInUSDC(sorobanHelper, pool.metadata.backstop, amount);
+      bidValue += await valueBackstopTokenInUSDC(sorobanHelper, amount);
     } else {
       throw new Error(`Failed to value bid asset: ${assetId}`);
     }
@@ -421,11 +421,10 @@ export async function calculateAuctionValue(
  */
 export async function valueBackstopTokenInUSDC(
   sorobanHelper: SorobanHelper,
-  backstopAddress: string,
   amount: bigint
 ): Promise<number> {
   // attempt to value via a single sided withdraw to USDC
-  const lpTokenValue = await sorobanHelper.simLPTokenToUSDC(backstopAddress, amount);
+  const lpTokenValue = await sorobanHelper.simLPTokenToUSDC(APP_CONFIG.backstopAddress, amount);
   if (lpTokenValue !== undefined) {
     return FixedMath.toFloat(lpTokenValue, 7);
   } else {
