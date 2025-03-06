@@ -423,4 +423,81 @@ describe('BidderHandler', () => {
     expect(new_auction_2?.fill_block).toEqual(fill_calc_2.block);
     expect(new_auction_2?.updated).toEqual(ledger);
   });
+  it('should skip an auction if unable to find pool config', async () => {
+    let ledger = 1000; // nextLedger is 1001
+    let auction_1: AuctionEntry = {
+      pool_id: 'UNKNOWN_POOL',
+      user_id: 'user1',
+      auction_type: AuctionType.Liquidation,
+      filler: APP_CONFIG.fillers[0].keypair.publicKey(),
+      start_block: ledger - 150,
+      fill_block: ledger + 5,
+      updated: ledger - 5,
+    };
+
+    db.setAuctionEntry(auction_1);
+    mockedSorobanHelper.loadAuction.mockResolvedValueOnce(
+      new Auction('teapot', AuctionType.Liquidation, {
+        bid: new Map<string, bigint>(),
+        lot: new Map<string, bigint>(),
+        block: ledger - 1,
+      })
+    );
+
+    const appEvent1: AppEvent = {
+      type: EventType.LEDGER,
+      ledger,
+    } as LedgerEvent;
+    await bidderHandler.processEvent(appEvent1);
+
+    // validate auction 1 is not updated (error)
+    let new_auction_1 = db.getAuctionEntry(
+      auction_1.pool_id,
+      auction_1.user_id,
+      auction_1.auction_type
+    );
+    expect(new_auction_1?.fill_block).toEqual(auction_1.fill_block);
+    expect(new_auction_1?.updated).toEqual(auction_1.updated);
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(mockedSorobanHelper.loadAuction).not.toHaveBeenCalled();
+  });
+
+  it('should skip an auction if unable to find filler', async () => {
+    let ledger = 1000; // nextLedger is 1001
+    let auction_1: AuctionEntry = {
+      pool_id: 'pool1',
+      user_id: 'user1',
+      auction_type: AuctionType.Liquidation,
+      filler: Keypair.random().publicKey(),
+      start_block: ledger - 150,
+      fill_block: ledger + 5,
+      updated: ledger - 5,
+    };
+
+    db.setAuctionEntry(auction_1);
+    mockedSorobanHelper.loadAuction.mockResolvedValueOnce(
+      new Auction('teapot', AuctionType.Liquidation, {
+        bid: new Map<string, bigint>(),
+        lot: new Map<string, bigint>(),
+        block: ledger - 1,
+      })
+    );
+
+    const appEvent1: AppEvent = {
+      type: EventType.LEDGER,
+      ledger,
+    } as LedgerEvent;
+    await bidderHandler.processEvent(appEvent1);
+
+    // validate auction 1 is not updated (error)
+    let new_auction_1 = db.getAuctionEntry(
+      auction_1.pool_id,
+      auction_1.user_id,
+      auction_1.auction_type
+    );
+    expect(new_auction_1?.fill_block).toEqual(auction_1.fill_block);
+    expect(new_auction_1?.updated).toEqual(auction_1.updated);
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(mockedSorobanHelper.loadAuction).not.toHaveBeenCalled();
+  });
 });
