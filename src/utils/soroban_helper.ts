@@ -36,12 +36,17 @@ export interface PoolUserEst {
   user: PoolUser;
 }
 
+export interface ErrorTimeout {
+  timeout: number;
+  error: any;
+}
+
 export class SorobanHelper {
   network: Network;
-  private pool_cache: Map<string, Pool>;
+  private pool_cache: Map<string, Pool | ErrorTimeout>;
   // cache for pool users keyed by 'poolId + userId'
-  private user_cache: Map<string, PoolUser> = new Map();
-  private oracle_cache: PoolOracle | undefined;
+  private user_cache: Map<string, PoolUser | ErrorTimeout>;
+  private oracle_cache: Map<string, PoolOracle | ErrorTimeout>;
 
   constructor() {
     this.network = {
@@ -52,6 +57,8 @@ export class SorobanHelper {
       },
     };
     this.pool_cache = new Map();
+    this.user_cache = new Map();
+    this.oracle_cache = new Map();
   }
 
   async loadLatestLedger(): Promise<number> {
@@ -67,43 +74,55 @@ export class SorobanHelper {
 
   async loadPool(config: PoolConfig): Promise<Pool> {
     let cachedPool = this.pool_cache.get(config.poolAddress);
-    if (cachedPool) {
-      return cachedPool;
-    } else {
-      let pool: Pool = await PoolV1.load(this.network, config.poolAddress);
-
-      if (pool) {
-        this.pool_cache.set(config.poolAddress, pool);
-        return pool;
-      } else {
-        throw new Error(`Pool not found: ${config.poolAddress}`);
+    try {
+      if (cachedPool) {
+        if ('timeout' in cachedPool && cachedPool.timeout > Date.now()) throw cachedPool.error;
+        else if (cachedPool instanceof Pool) return cachedPool;
       }
+      let pool: Pool = await PoolV1.load(this.network, config.poolAddress);
+      this.pool_cache.set(config.poolAddress, pool);
+      return pool;
+    } catch (e) {
+      this.pool_cache.set(config.poolAddress, { timeout: Date.now() + 5000, error: e });
+      logger.error(`Error loading ${config.name} pool:  ${e}`);
+      throw e;
     }
   }
 
   async loadUser(config: PoolConfig, userId: string): Promise<PoolUser> {
-    if (this.user_cache.has(config.poolAddress + userId)) {
-      return this.user_cache.get(config.poolAddress + userId) as PoolUser;
-    } else {
+    let cachedUser = this.user_cache.get(config.poolAddress + userId);
+    try {
+      if (cachedUser) {
+        if ('timeout' in cachedUser && cachedUser.timeout > Date.now()) throw cachedUser.error;
+        else if (cachedUser instanceof PoolUser) return cachedUser;
+      }
       const pool = await this.loadPool(config);
       const user = await pool.loadUser(userId);
 
       this.user_cache.set(config.poolAddress + userId, user);
       return user;
+    } catch (e) {
+      this.user_cache.set(config.poolAddress + userId, { timeout: Date.now() + 5000, error: e });
+      logger.error(`Error loading user: ${userId} in pool: ${config.name} Error: ${e}`);
+      throw e;
     }
   }
 
   async loadPoolOracle(config: PoolConfig): Promise<PoolOracle> {
+    let cachedOracle = this.oracle_cache.get(config.poolAddress);
     try {
-      if (this.oracle_cache) {
-        return this.oracle_cache;
+      if (cachedOracle) {
+        if ('timeout' in cachedOracle && cachedOracle.timeout > Date.now())
+          throw cachedOracle.error;
+        else if (cachedOracle instanceof PoolOracle) return cachedOracle;
       }
       const pool = await this.loadPool(config);
       const oracle = await pool.loadOracle();
-      this.oracle_cache = oracle;
+      this.oracle_cache.set(config.poolAddress, oracle);
       return oracle;
     } catch (e) {
-      logger.error(`Error loading pool oracle: ${e}`);
+      this.oracle_cache.set(config.poolAddress, { timeout: Date.now() + 5000, error: e });
+      logger.error(`Error loading pool oracle for pool: ${config.name} Error: ${e}`);
       throw e;
     }
   }
@@ -112,10 +131,12 @@ export class SorobanHelper {
     try {
       const pool = await this.loadPool(config);
       const user = await this.loadUser(config, userId);
-      const poolOracle = await pool.loadOracle();
+      const poolOracle = await this.loadPoolOracle(config);
       return { estimate: PositionsEstimate.build(pool, poolOracle, user.positions), user };
     } catch (e) {
-      logger.error(`Error loading user position estimate: ${e}`);
+      logger.error(
+        `Error loading user position estimate for user: ${userId} in pool: ${config.name} Error: ${e}`
+      );
       throw e;
     }
   }
@@ -140,7 +161,7 @@ export class SorobanHelper {
       );
       return new Auction(userId, auctionType, auctionData);
     } catch (e) {
-      logger.error(`Error loading auction: ${e}`);
+      logger.error(`Error loading auction for user: ${userId} in pool: ${config.name} Error: ${e}`);
       throw e;
     }
   }
