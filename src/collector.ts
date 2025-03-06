@@ -129,13 +129,6 @@ export async function runCollector(
         let blendPoolEvent = poolEventFromEventResponse(raw_event);
         if (blendPoolEvent) {
           // handle pool events immediately
-          let poolConfig = poolConfigs.find(
-            (config) => config.poolAddress === blendPoolEvent.contractId
-          );
-          if (!poolConfig) {
-            logger.error(`Pool config not found for event: ${stringify(blendPoolEvent)}`);
-            continue;
-          }
           let poolEvent: PoolEventEvent = {
             type: EventType.POOL_EVENT,
             timestamp: Date.now(),
