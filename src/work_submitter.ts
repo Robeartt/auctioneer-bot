@@ -71,10 +71,9 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
   ): Promise<boolean> {
     try {
       logger.info(`Creating liquidation for user: ${userLiquidation.user}`);
-      let op: string;
 
       const pool = new PoolContractV1(userLiquidation.poolConfig.poolAddress);
-      op = pool.newLiquidationAuction({
+      const op = pool.newLiquidationAuction({
         user: userLiquidation.user,
         percent_liquidated: userLiquidation.liquidationPercent,
       });
@@ -130,7 +129,7 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
     try {
       logger.info(`Transferring bad debt to backstop for user: ${badDebtTransfer.user}`);
       const pool = new PoolContractV1(badDebtTransfer.poolConfig.poolAddress);
-      let op = pool.badDebt(badDebtTransfer.user);
+      const op = pool.badDebt(badDebtTransfer.user);
       await sorobanHelper.submitTransaction(op, APP_CONFIG.keypair);
       const logMessage = `Successfully transferred bad debt to backstop for user: ${badDebtTransfer.user}`;
       await sendSlackNotification(badDebtTransfer.poolConfig, logMessage);

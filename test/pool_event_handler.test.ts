@@ -766,4 +766,28 @@ describe('poolEventHandler', () => {
       userId: APP_CONFIG.backstopAddress,
     });
   });
+
+  it('Short circuits when pool config is not found', async () => {
+    let poolEvent: PoolEventEvent = {
+      timestamp: 777,
+      type: EventType.POOL_EVENT,
+      event: {
+        id: '1',
+        contractId: 'unknownPoolId',
+        contractType: BlendContractType.Pool,
+        ledger: 12345,
+        ledgerClosedAt: '2021-10-01T00:00:00Z',
+        txHash: '0x123',
+        eventType: PoolEventType.BadDebt,
+        user: APP_CONFIG.backstopAddress,
+        dTokens: BigInt(1234),
+        assetId: 'USD',
+      },
+    };
+
+    await poolEventHandler.handlePoolEvent(poolEvent);
+
+    expect(logger.error).toHaveBeenCalled();
+    expect(mockedSorobanHelper.loadPool).not.toHaveBeenCalled();
+  });
 });

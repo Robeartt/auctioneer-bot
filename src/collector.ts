@@ -153,7 +153,7 @@ export async function runCollector(
   }
 }
 
-function createFilter(poolConfigs: PoolConfig[]) {
+export function createFilter(poolConfigs: PoolConfig[]) {
   let pools = poolConfigs.map((poolConfig) => poolConfig.poolAddress);
   let filter: Api.EventFilter[] = [];
   for (let i = 0; i < pools.length; i += 5) {
