@@ -188,64 +188,6 @@ export class WorkHandler {
         }
         break;
       }
-      case EventType.DB_MIGRATION_V2: {
-        const currLedger = await this.sorobanHelper.loadLatestLedger();
-        const users = this.db.getUserEntriesUpdatedBefore(currLedger + 1);
-
-        for (const user of users) {
-          if (user.pool_id === 'default_pool') {
-            for (const poolConfig of appEvent.poolConfigs) {
-              const pool = await this.sorobanHelper.loadPool(poolConfig);
-              try {
-                const { estimate: poolUserEstimate, user: poolUser } =
-                  await this.sorobanHelper.loadUserPositionEstimate(poolConfig, user.user_id);
-                if (poolUserEstimate.totalEffectiveLiabilities > 0n) {
-                  updateUser(this.db, pool, poolUser, poolUserEstimate);
-                }
-              } catch {
-                // @dev: Ignore errors for users that don't exist in the pool
-              }
-            }
-            this.db.deleteUserEntry('default_pool', user.user_id);
-          }
-        }
-
-        for (const poolConfig of appEvent.poolConfigs) {
-          const auctions = this.db.getAllAuctionEntries();
-          for (const auctionEntry of auctions) {
-            try {
-              if (auctionEntry.pool_id === 'default_pool') {
-                const auction = await this.sorobanHelper.loadAuction(
-                  poolConfig,
-                  auctionEntry.user_id,
-                  auctionEntry.auction_type
-                );
-                if (auction) {
-                  this.db.setAuctionEntry({
-                    pool_id: poolConfig.poolAddress,
-                    user_id: auctionEntry.user_id,
-                    auction_type: auctionEntry.auction_type,
-                    filler: auctionEntry.filler,
-                    start_block: auctionEntry.start_block,
-                    fill_block: auctionEntry.fill_block,
-                    updated: auctionEntry.updated,
-                  });
-                  this.db.deleteAuctionEntry(
-                    'default_pool',
-                    auctionEntry.user_id,
-                    auctionEntry.auction_type
-                  );
-                } else {
-                  break;
-                }
-              }
-            } catch {
-              // @dev: Ignore errors for auctions that don't exist in the pool
-            }
-          }
-        }
-      }
-
       default:
         logger.error(`Unhandled event type: ${appEvent.type}`);
         break;

@@ -9,7 +9,6 @@ export enum EventType {
   POOL_EVENT = 'pool_event',
   USER_REFRESH = 'user_refresh',
   CHECK_USER = 'check_user',
-  DB_MIGRATION_V2 = 'db_migration_v2',
 }
 
 // ********* Shared **********
@@ -22,8 +21,7 @@ export type AppEvent =
   | LiqScanEvent
   | PoolEventEvent
   | UserRefreshEvent
-  | CheckUserEvent
-  | DBMigrationV2Event;
+  | CheckUserEvent;
 
 /**
  * Base interface for all events.
@@ -98,12 +96,4 @@ export interface CheckUserEvent extends BaseEvent {
    * The user to check.
    */
   userId: string;
-}
-
-/**
- * Event to run a database migration.
- */
-export interface DBMigrationV2Event extends BaseEvent {
-  type: EventType.DB_MIGRATION_V2;
-  poolConfigs: PoolConfig[];
 }
