@@ -11,7 +11,7 @@ export class OracleHistory {
    */
   priceDelta: number;
   /**
-   * A map of asset IDs to the last stored price data.
+   * A map of (oracle IDs + asset IDs) to the last stored price data.
    */
   priceHistory: Map<string, PriceData>;
 
@@ -30,10 +30,10 @@ export class OracleHistory {
     let down: string[] = [];
 
     for (let [assetId, priceData] of current.prices) {
-      let priceHistory = this.priceHistory.get(assetId);
+      let priceHistory = this.priceHistory.get(current.oracleId + assetId);
 
       if (priceHistory === undefined) {
-        this.priceHistory.set(assetId, priceData);
+        this.priceHistory.set(current.oracleId + assetId, priceData);
         continue;
       }
 
@@ -48,12 +48,12 @@ export class OracleHistory {
           down.push(assetId);
         }
         // set the new price as the last viewed price
-        this.priceHistory.set(assetId, priceData);
+        this.priceHistory.set(current.oracleId + assetId, priceData);
       }
       // TODO: Do we want this? Or would it be better to just wait for a significant change?
       else if (priceData.timestamp > priceHistory.timestamp + 24 * 60 * 60) {
         // update the last viewed price after a day has passed without a significant change
-        this.priceHistory.set(assetId, priceData);
+        this.priceHistory.set(current.oracleId + assetId, priceData);
       }
     }
 

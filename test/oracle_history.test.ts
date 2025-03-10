@@ -13,8 +13,9 @@ describe('oracleHistory', () => {
     next_prices.set('eurc', { price: BigInt(1_1000000 * 1.04), timestamp: 2000 });
     next_prices.set('ethereum', { price: BigInt(2_5000000 * 0.94), timestamp: 2000 });
 
-    let poolOracle0 = new PoolOracle('id', starting_prices, 7, 1);
-    let poolOracle1 = new PoolOracle('id', next_prices, 7, 100);
+    let oracleId = 'id';
+    let poolOracle0 = new PoolOracle(oracleId, starting_prices, 7, 1);
+    let poolOracle1 = new PoolOracle(oracleId, next_prices, 7, 100);
 
     let oracleHistory = new OracleHistory(0.05);
 
@@ -27,10 +28,14 @@ describe('oracleHistory', () => {
     expect(nextStep.down).toEqual(['ethereum']);
 
     // check that the price history was updated for flagged assets
-    expect(oracleHistory.priceHistory.get('bitcoin')).toEqual(next_prices.get('bitcoin'));
-    expect(oracleHistory.priceHistory.get('ethereum')).toEqual(next_prices.get('ethereum'));
+    expect(oracleHistory.priceHistory.get(oracleId + 'bitcoin')).toEqual(
+      next_prices.get('bitcoin')
+    );
+    expect(oracleHistory.priceHistory.get(oracleId + 'ethereum')).toEqual(
+      next_prices.get('ethereum')
+    );
     // check that the price history was not updated for unflagged assets
-    expect(oracleHistory.priceHistory.get('eurc')).toEqual(starting_prices.get('eurc'));
+    expect(oracleHistory.priceHistory.get(oracleId + 'eurc')).toEqual(starting_prices.get('eurc'));
   });
 
   it('correctly tracks price history', async () => {
@@ -64,9 +69,10 @@ describe('oracleHistory', () => {
       timestamp: 1000 + 24 * 60 * 60 + 1,
     });
 
-    let poolOracle0 = new PoolOracle('id', starting_prices, 7, 1);
-    let poolOracle1 = new PoolOracle('id', next_prices, 7, 9000);
-    let poolOracle2 = new PoolOracle('id', next_prices_2, 7, 10000);
+    let oracleId = 'id';
+    let poolOracle0 = new PoolOracle(oracleId, starting_prices, 7, 1);
+    let poolOracle1 = new PoolOracle(oracleId, next_prices, 7, 9000);
+    let poolOracle2 = new PoolOracle(oracleId, next_prices_2, 7, 10000);
 
     let oracleHistory = new OracleHistory(0.05);
 
@@ -83,10 +89,61 @@ describe('oracleHistory', () => {
     expect(nextDayStep.down).toEqual([]);
 
     // updated in poolOracle1
-    expect(oracleHistory.priceHistory.get('bitcoin')).toEqual(next_prices.get('bitcoin'));
+    expect(oracleHistory.priceHistory.get(oracleId + 'bitcoin')).toEqual(
+      next_prices.get('bitcoin')
+    );
     // updated in poolOracle2
-    expect(oracleHistory.priceHistory.get('ethereum')).toEqual(next_prices_2.get('ethereum'));
+    expect(oracleHistory.priceHistory.get(oracleId + 'ethereum')).toEqual(
+      next_prices_2.get('ethereum')
+    );
     // updated in poolOracle2
-    expect(oracleHistory.priceHistory.get('eurc')).toEqual(next_prices_2.get('eurc'));
+    expect(oracleHistory.priceHistory.get(oracleId + 'eurc')).toEqual(next_prices_2.get('eurc'));
+  });
+
+  it('correctly tracks prices via oracle id and asset id', async () => {
+    let oracle_0_starting_prices = new Map<string, PriceData>();
+    oracle_0_starting_prices.set('bitcoin', { price: BigInt(59573_0000000), timestamp: 1000 });
+    oracle_0_starting_prices.set('eurc', { price: BigInt(1_1000000), timestamp: 1000 });
+    oracle_0_starting_prices.set('ethereum', { price: BigInt(2_5000000), timestamp: 1000 });
+
+    let oracle_1_starting_prices = new Map<string, PriceData>();
+    oracle_1_starting_prices.set('bitcoin', {
+      price: BigInt(59573_0000000 * 1.051),
+      timestamp: 2000,
+    });
+    oracle_1_starting_prices.set('eurc', { price: BigInt(1_1000000 * 1.04), timestamp: 2000 });
+    oracle_1_starting_prices.set('ethereum', { price: BigInt(2_5000000 * 0.94), timestamp: 2000 });
+
+    let poolOracle0 = new PoolOracle('id', oracle_0_starting_prices, 7, 1);
+    let poolOracle1 = new PoolOracle('id2', oracle_1_starting_prices, 7, 100);
+
+    let oracleHistory = new OracleHistory(0.05);
+
+    let initStep0 = oracleHistory.getSignificantPriceChanges(poolOracle0);
+    expect(initStep0.up).toEqual([]);
+    expect(initStep0.down).toEqual([]);
+
+    let initStep1 = oracleHistory.getSignificantPriceChanges(poolOracle1);
+    expect(initStep1.up).toEqual([]);
+    expect(initStep1.down).toEqual([]);
+
+    expect(oracleHistory.priceHistory.get(poolOracle0.oracleId + 'bitcoin')).toEqual(
+      oracle_0_starting_prices.get('bitcoin')
+    );
+    expect(oracleHistory.priceHistory.get(poolOracle0.oracleId + 'eurc')).toEqual(
+      oracle_0_starting_prices.get('eurc')
+    );
+    expect(oracleHistory.priceHistory.get(poolOracle0.oracleId + 'ethereum')).toEqual(
+      oracle_0_starting_prices.get('ethereum')
+    );
+    expect(oracleHistory.priceHistory.get(poolOracle1.oracleId + 'bitcoin')).toEqual(
+      oracle_1_starting_prices.get('bitcoin')
+    );
+    expect(oracleHistory.priceHistory.get(poolOracle1.oracleId + 'eurc')).toEqual(
+      oracle_1_starting_prices.get('eurc')
+    );
+    expect(oracleHistory.priceHistory.get(poolOracle1.oracleId + 'ethereum')).toEqual(
+      oracle_1_starting_prices.get('ethereum')
+    );
   });
 });
