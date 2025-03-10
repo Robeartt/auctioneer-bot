@@ -1,10 +1,7 @@
-import { APP_CONFIG, PoolConfig } from './config.js';
+import { APP_CONFIG } from './config.js';
 import { logger } from './logger.js';
 
-export async function sendSlackNotification(
-  poolConfig: PoolConfig,
-  message: string
-): Promise<void> {
+export async function sendSlackNotification(message: string): Promise<void> {
   try {
     if (APP_CONFIG.slackWebhook) {
       const response = await fetch(APP_CONFIG.slackWebhook, {
@@ -13,7 +10,7 @@ export async function sendSlackNotification(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          text: `*Bot Name*: ${APP_CONFIG.name}\n*Pool Name*: ${poolConfig.name}\n${message}`,
+          text: `*Bot Name*: ${APP_CONFIG.name}\n${message}`,
         }),
       });
       if (!response.ok) {
@@ -21,7 +18,7 @@ export async function sendSlackNotification(
       }
     } else {
       console.log(
-        `Bot Name: ${APP_CONFIG.name}\nTimestamp: ${new Date().toISOString()}\nPool Name: ${poolConfig.name}\n${message}`
+        `Bot Name: ${APP_CONFIG.name}\nTimestamp: ${new Date().toISOString()}\n${message}`
       );
     }
   } catch (e) {

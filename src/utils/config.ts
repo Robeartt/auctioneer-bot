@@ -1,14 +1,12 @@
 import { Keypair } from '@stellar/stellar-sdk';
 import { readFileSync } from 'fs';
 import { parse } from './json.js';
-import { Version } from '@blend-capital/blend-sdk';
 
 export interface Filler {
   name: string;
   keypair: Keypair;
   defaultProfitPct: number;
-  minHealthFactor: number;
-  forceFill: boolean;
+  supportedPools: PoolFillerConfig[];
   supportedBid: string[];
   supportedLot: string[];
 }
@@ -44,11 +42,12 @@ export interface AuctionProfit {
   supportedLot: string[];
 }
 
-export interface PoolConfig {
-  name: string;
+export interface PoolFillerConfig {
   poolAddress: string;
   minPrimaryCollateral: bigint;
   primaryAsset: string;
+  minHealthFactor: number;
+  forceFill: boolean;
 }
 
 export interface AppConfig {
@@ -61,7 +60,7 @@ export interface AppConfig {
   blndAddress: string;
   keypair: Keypair;
   fillers: Filler[];
-  poolConfigs: PoolConfig[];
+  pools: string[];
   horizonURL: string | undefined;
   priceSources: PriceSource[] | undefined;
   profits: AuctionProfit[] | undefined;
@@ -93,7 +92,7 @@ export function validateAppConfig(config: any): boolean {
     typeof config.blndAddress !== 'string' ||
     typeof config.keypair !== 'string' ||
     !Array.isArray(config.fillers) ||
-    !Array.isArray(config.poolConfigs) ||
+    !Array.isArray(config.pools) ||
     (config.horizonURL !== undefined && typeof config.horizonURL !== 'string') ||
     (config.priceSources !== undefined && !Array.isArray(config.priceSources)) ||
     (config.profits !== undefined && !Array.isArray(config.profits)) ||
@@ -107,7 +106,7 @@ export function validateAppConfig(config: any): boolean {
 
   return (
     config.fillers.every(validateFiller) &&
-    config.poolConfigs.every(validatePoolConfig) &&
+    config.pools.every((item: any) => typeof item === 'string') &&
     (config.priceSources === undefined || config.priceSources.every(validatePriceSource)) &&
     (config.profits === undefined || config.profits.every(validateAuctionProfit))
   );
@@ -122,8 +121,8 @@ export function validateFiller(filler: any): boolean {
     typeof filler.name === 'string' &&
     typeof filler.keypair === 'string' &&
     typeof filler.defaultProfitPct === 'number' &&
-    typeof filler.minHealthFactor === 'number' &&
-    typeof filler.forceFill === 'boolean' &&
+    Array.isArray(filler.supportedPools) &&
+    filler.supportedPools.every(validatePoolFillerConfig) &&
     Array.isArray(filler.supportedBid) &&
     filler.supportedBid.every((item: any) => typeof item === 'string') &&
     Array.isArray(filler.supportedLot) &&
@@ -192,16 +191,17 @@ export function validateAuctionProfit(profits: any): boolean {
   return false;
 }
 
-export function validatePoolConfig(config: any): boolean {
+export function validatePoolFillerConfig(config: any): boolean {
   if (typeof config !== 'object' || config === null) {
     return false;
   }
 
   if (
-    typeof config.name !== 'string' ||
     typeof config.poolAddress !== 'string' ||
     typeof config.minPrimaryCollateral !== 'string' ||
-    typeof config.primaryAsset !== 'string'
+    typeof config.primaryAsset !== 'string' ||
+    typeof config.minHealthFactor !== 'number' ||
+    typeof config.forceFill !== 'boolean'
   ) {
     return false;
   }

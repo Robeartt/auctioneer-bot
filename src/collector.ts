@@ -15,8 +15,8 @@ import { AuctioneerDatabase } from './utils/db.js';
 import { stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
 import { sendEvent } from './utils/messages.js';
-import { PoolConfig } from './utils/config.js';
 import { Api } from '@stellar/stellar-sdk/rpc';
+import { APP_CONFIG } from './utils/config.js';
 
 let startup_ledger = 0;
 
@@ -25,7 +25,6 @@ export async function runCollector(
   bidder: ChildProcess,
   db: AuctioneerDatabase,
   stellarRpc: rpc.Server,
-  poolConfigs: PoolConfig[],
   poolEventHandler: PoolEventHandler
 ) {
   const timer = Date.now();
@@ -100,7 +99,7 @@ export async function runCollector(
     // if we are too far behind, start from 17270 ledgers ago (default max ledger history is 17280)
     start_ledger = Math.max(start_ledger, latestLedger - 17270);
     let events: rpc.Api.RawGetEventsResponse;
-    const filters = createFilter(poolConfigs);
+    const filters = createFilter(APP_CONFIG.pools);
     try {
       events = await stellarRpc._getEvents({
         startLedger: start_ledger,
@@ -153,8 +152,7 @@ export async function runCollector(
   }
 }
 
-export function createFilter(poolConfigs: PoolConfig[]) {
-  let pools = poolConfigs.map((poolConfig) => poolConfig.poolAddress);
+export function createFilter(pools: string[]) {
   let filter: Api.EventFilter[] = [];
   for (let i = 0; i < pools.length; i += 5) {
     filter.push({

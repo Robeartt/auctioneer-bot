@@ -8,7 +8,7 @@ import {
   RequestType,
 } from '@blend-capital/blend-sdk';
 import { getFillerAvailableBalances, getFillerProfitPct } from './filler.js';
-import { APP_CONFIG, Filler, PoolConfig } from './utils/config.js';
+import { APP_CONFIG, Filler } from './utils/config.js';
 import { AuctioneerDatabase } from './utils/db.js';
 import { stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
@@ -35,7 +35,7 @@ export interface AuctionValue {
 }
 
 export async function calculateAuctionFill(
-  poolConfig: PoolConfig,
+  poolId: string,
   filler: Filler,
   auction: Auction,
   nextLedger: number,
@@ -43,12 +43,11 @@ export async function calculateAuctionFill(
   db: AuctioneerDatabase
 ): Promise<AuctionFill> {
   try {
-    const pool = await sorobanHelper.loadPool(poolConfig);
-    const poolOracle = await sorobanHelper.loadPoolOracle(poolConfig);
+    const pool = await sorobanHelper.loadPool(poolId);
+    const poolOracle = await sorobanHelper.loadPoolOracle(poolId);
 
     const auctionValue = await calculateAuctionValue(auction, pool, poolOracle, sorobanHelper, db);
     return await calculateBlockFillAndPercent(
-      poolConfig,
       filler,
       auction,
       auctionValue,
@@ -73,7 +72,6 @@ export async function calculateAuctionFill(
  * @param sorobanHelper - The soroban helper to use for the calculation
  */
 export async function calculateBlockFillAndPercent(
-  poolConfig: PoolConfig,
   filler: Filler,
   auction: Auction,
   auctionValue: AuctionValue,
@@ -85,6 +83,11 @@ export async function calculateBlockFillAndPercent(
   let fillBlockDelay = 0;
   let fillPercent = 100;
   let requests: Request[] = [];
+  const fillerConfig = filler.supportedPools.find((config) => config.poolAddress === pool.id);
+  if (fillerConfig === undefined) {
+    logger.error(`Unable to find filler config for pool: ${pool.id}`);
+    throw new Error(`Unable to find filler config for pool: ${pool.id}`);
+  }
 
   // get relevant assets for the auction
   const relevant_assets = [];
@@ -92,14 +95,14 @@ export async function calculateBlockFillAndPercent(
     case AuctionType.Liquidation:
       relevant_assets.push(...Array.from(auction.data.lot.keys()));
       relevant_assets.push(...Array.from(auction.data.bid.keys()));
-      relevant_assets.push(poolConfig.primaryAsset);
+      relevant_assets.push(fillerConfig.primaryAsset);
       break;
     case AuctionType.Interest:
       relevant_assets.push(APP_CONFIG.backstopTokenAddress);
       break;
     case AuctionType.BadDebt:
       relevant_assets.push(...Array.from(auction.data.bid.keys()));
-      relevant_assets.push(poolConfig.primaryAsset);
+      relevant_assets.push(fillerConfig.primaryAsset);
       break;
   }
   const fillerBalances = await getFillerAvailableBalances(
@@ -122,7 +125,7 @@ export async function calculateBlockFillAndPercent(
   }
   fillBlockDelay = Math.min(Math.max(Math.ceil(fillBlockDelay), 0), 400);
   // apply force fill auction boundries to profit calculations
-  if (filler.forceFill) {
+  if (fillerConfig.forceFill) {
     fillBlockDelay = Math.min(fillBlockDelay, 350);
   }
 
@@ -151,7 +154,7 @@ export async function calculateBlockFillAndPercent(
     }
   } else if (auction.type === AuctionType.Liquidation || auction.type === AuctionType.BadDebt) {
     const { estimate: fillerPositionEstimates } = await sorobanHelper.loadUserPositionEstimate(
-      poolConfig,
+      pool.id,
       filler.keypair.publicKey()
     );
     let canFillWithSafeHF = false;
@@ -167,7 +170,7 @@ export async function calculateBlockFillAndPercent(
       // inflate minHealthFactor slightly, to allow for the unwind logic to unwind looped positions safely
       const additionalLiabilities = effectiveLiabilities * bidScalar * (fillPercent / 100);
       const additionalCollateral = effectiveCollateral * lotScalar * (fillPercent / 100);
-      const safeHealthFactor = filler.minHealthFactor * 1.1;
+      const safeHealthFactor = fillerConfig.minHealthFactor * 1.1;
       let limitToHF =
         (fillerPositionEstimates.totalEffectiveCollateral + additionalCollateral) /
           safeHealthFactor -
@@ -221,9 +224,9 @@ export async function calculateBlockFillAndPercent(
 
       if (limitToHF < 0) {
         // if we still are under the health factor, we need to try and add more of the fillers primary asset as collateral
-        const primaryBalance = loopFillerBalances.get(poolConfig.primaryAsset) ?? 0n;
-        const primaryReserve = pool.reserves.get(poolConfig.primaryAsset);
-        const primaryOraclePrice = poolOracle.getPriceFloat(poolConfig.primaryAsset);
+        const primaryBalance = loopFillerBalances.get(fillerConfig.primaryAsset) ?? 0n;
+        const primaryReserve = pool.reserves.get(fillerConfig.primaryAsset);
+        const primaryOraclePrice = poolOracle.getPriceFloat(fillerConfig.primaryAsset);
         if (
           primaryReserve !== undefined &&
           primaryOraclePrice !== undefined &&
@@ -241,7 +244,7 @@ export async function calculateBlockFillAndPercent(
           collateralAdded += collateral;
           requests.push({
             request_type: RequestType.SupplyCollateral,
-            address: poolConfig.primaryAsset,
+            address: fillerConfig.primaryAsset,
             amount: FixedMath.toFixed(primaryDeposit, primaryReserve.config.decimals),
           });
         }

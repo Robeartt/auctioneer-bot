@@ -42,13 +42,7 @@ export class BidderHandler {
                 logger.error(`Filler not found for auction: ${stringify(auctionEntry)}`);
                 continue;
               }
-              const poolConfig = APP_CONFIG.poolConfigs.find(
-                (p) => p.poolAddress === auctionEntry.pool_id
-              );
-              if (poolConfig === undefined) {
-                logger.error(`Pool config not found for auction: ${stringify(auctionEntry)}`);
-                continue;
-              }
+
               if (this.submissionQueue.containsAuction(auctionEntry)) {
                 // auction already being bid on
                 continue;
@@ -58,7 +52,7 @@ export class BidderHandler {
               if (auctionEntry.fill_block === 0 || ledgersToFill <= 5 || ledgersToFill % 10 === 0) {
                 // recalculate the auction
                 const auction = await this.sorobanHelper.loadAuction(
-                  poolConfig,
+                  auctionEntry.pool_id,
                   auctionEntry.user_id,
                   auctionEntry.auction_type
                 );
@@ -74,7 +68,7 @@ export class BidderHandler {
                   continue;
                 }
                 const fill = await calculateAuctionFill(
-                  poolConfig,
+                  auctionEntry.pool_id,
                   filler,
                   auction,
                   nextLedger,
@@ -84,11 +78,12 @@ export class BidderHandler {
                 const logMessage =
                   `Auction Calculation\n` +
                   `Type: ${AuctionType[auction.type]}\n` +
+                  `Pool: ${auctionEntry.pool_id}\n` +
                   `User: ${auction.user}\n` +
                   `Fill: ${stringify(fill, 2)}\n` +
                   `Ledgers To Fill In: ${fill.block - nextLedger}\n`;
                 if (auctionEntry.fill_block === 0) {
-                  await sendSlackNotification(poolConfig, logMessage);
+                  await sendSlackNotification(logMessage);
                 }
                 logger.info(logMessage);
                 auctionEntry.fill_block = fill.block;
@@ -98,7 +93,6 @@ export class BidderHandler {
               if (auctionEntry.fill_block <= nextLedger) {
                 let submission: AuctionBid = {
                   type: BidderSubmissionType.BID,
-                  poolConfig: poolConfig,
                   filler: filler,
                   auctionEntry: auctionEntry,
                 };

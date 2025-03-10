@@ -84,7 +84,7 @@ async function main() {
   const validatePoolsEvent: ValidatePoolsEvent = {
     type: EventType.VALIDATE_POOLS,
     timestamp: Date.now(),
-    pools: APP_CONFIG.poolConfigs,
+    pools: APP_CONFIG.pools,
   };
   sendEvent(worker, validatePoolsEvent);
 
@@ -113,7 +113,7 @@ async function main() {
     try {
       let sorobanHelper = new SorobanHelper();
       let poolEventHandler = new PoolEventHandler(db, sorobanHelper, worker);
-      await runCollector(worker, bidder, db, stellarRpc, APP_CONFIG.poolConfigs, poolEventHandler);
+      await runCollector(worker, bidder, db, stellarRpc, poolEventHandler);
     } catch (e: any) {
       logger.error(`Error in collector`, e);
     }

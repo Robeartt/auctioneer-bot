@@ -2,7 +2,7 @@ import { PoolContractV1, PoolContractV2, Version } from '@blend-capital/blend-sd
 import { rpc } from '@stellar/stellar-sdk';
 import { calculateAuctionFill } from './auction.js';
 import { getFillerAvailableBalances, managePositions } from './filler.js';
-import { APP_CONFIG, Filler, PoolConfig } from './utils/config.js';
+import { Filler } from './utils/config.js';
 import { AuctioneerDatabase, AuctionEntry, AuctionType } from './utils/db.js';
 import { serializeError, stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
@@ -19,7 +19,6 @@ export enum BidderSubmissionType {
 
 export interface BaseBidderSubmission {
   type: BidderSubmissionType;
-  poolConfig: PoolConfig;
 }
 
 export interface AuctionBid extends BaseBidderSubmission {
@@ -30,6 +29,7 @@ export interface AuctionBid extends BaseBidderSubmission {
 
 export interface FillerUnwind extends BaseBidderSubmission {
   type: BidderSubmissionType.UNWIND;
+  poolId: string;
   filler: Filler;
 }
 
@@ -85,7 +85,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       const nextLedger = currLedger + 1;
 
       const auction = await sorobanHelper.loadAuction(
-        auctionBid.poolConfig,
+        auctionBid.auctionEntry.pool_id,
         auctionBid.auctionEntry.user_id,
         auctionBid.auctionEntry.auction_type
       );
@@ -96,7 +96,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       }
 
       const fill = await calculateAuctionFill(
-        auctionBid.poolConfig,
+        auctionBid.auctionEntry.pool_id,
         auctionBid.filler,
         auction,
         nextLedger,
@@ -105,7 +105,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       );
 
       if (nextLedger >= fill.block) {
-        const pool = new PoolContractV1(auctionBid.poolConfig.poolAddress);
+        const pool = new PoolContractV1(auctionBid.auctionEntry.pool_id);
 
         const result = await sorobanHelper.submitTransaction(
           pool.submit({
@@ -135,19 +135,20 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
           {
             type: BidderSubmissionType.UNWIND,
             filler: auctionBid.filler,
-            poolConfig: auctionBid.poolConfig,
+            poolId: auctionBid.auctionEntry.pool_id,
           },
           2
         );
         let logMessage =
           `Successful bid on auction\n` +
           `Type: ${AuctionType[auctionBid.auctionEntry.auction_type]}\n` +
+          `Pool: ${auctionBid.auctionEntry.pool_id}\n` +
           `User: ${auctionBid.auctionEntry.user_id}\n` +
           `Filler: ${auctionBid.filler.name}\n` +
           `Fill Percent ${fill.percent}\n` +
           `Ledger Fill Delta ${result.ledger - auctionBid.auctionEntry.start_block}\n` +
           `Hash ${result.txHash}\n`;
-        await sendSlackNotification(auctionBid.poolConfig, logMessage);
+        await sendSlackNotification(logMessage);
         logger.info(logMessage);
         return true;
       } else {
@@ -164,10 +165,10 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       const logMessage =
         `Error submitting fill for auction\n` +
         `Type: ${auctionBid.auctionEntry.auction_type}\n` +
+        `Pool: ${auctionBid.auctionEntry.pool_id}\n` +
         `User: ${auctionBid.auctionEntry.user_id}\n` +
         `Filler: ${auctionBid.filler.name}`;
       await sendSlackNotification(
-        auctionBid.poolConfig,
         `<!channel> ` + logMessage + `\nError: ${stringify(serializeError(e))}`
       );
       logger.error(logMessage, e);
@@ -178,16 +179,25 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
   async submitUnwind(sorobanHelper: SorobanHelper, fillerUnwind: FillerUnwind): Promise<boolean> {
     logger.info(`Submitting unwind for filler ${fillerUnwind.filler.keypair.publicKey()}`);
     const filler_pubkey = fillerUnwind.filler.keypair.publicKey();
+    const fillerPrimaryAsset = fillerUnwind.filler.supportedPools.find(
+      (pool) => pool.poolAddress === fillerUnwind.poolId
+    )?.primaryAsset;
+    if (!fillerPrimaryAsset) {
+      logger.error(
+        `Filler ${fillerUnwind.filler.name} does not support pool: ${fillerUnwind.poolId}`
+      );
+      return false;
+    }
     const filler_tokens = [
       ...new Set([
-        fillerUnwind.poolConfig.primaryAsset,
+        fillerPrimaryAsset,
         ...fillerUnwind.filler.supportedBid,
         ...fillerUnwind.filler.supportedLot,
       ]),
     ];
-    const pool = await sorobanHelper.loadPool(fillerUnwind.poolConfig);
-    const poolOracle = await sorobanHelper.loadPoolOracle(fillerUnwind.poolConfig);
-    const filler_user = await sorobanHelper.loadUser(fillerUnwind.poolConfig, filler_pubkey);
+    const pool = await sorobanHelper.loadPool(fillerUnwind.poolId);
+    const poolOracle = await sorobanHelper.loadPoolOracle(fillerUnwind.poolId);
+    const filler_user = await sorobanHelper.loadUser(fillerUnwind.poolId, filler_pubkey);
     const filler_balances = await getFillerAvailableBalances(
       fillerUnwind.filler,
       filler_tokens,
@@ -208,7 +218,6 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
     let requests = managePositions(
       fillerUnwind.filler,
       pool,
-      fillerUnwind.poolConfig,
       poolOracle,
       filler_user.positions,
       filler_balances
@@ -216,7 +225,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
     if (requests.length > 0) {
       logger.info('Unwind found positions to manage', requests);
       // some positions to manage - submit the transaction
-      const pool = new PoolContractV1(fillerUnwind.poolConfig.poolAddress);
+      const pool = new PoolContractV1(fillerUnwind.poolId);
       const result = await sorobanHelper.submitTransaction(
         pool.submit({
           from: filler_pubkey,
@@ -235,7 +244,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         {
           type: BidderSubmissionType.UNWIND,
           filler: fillerUnwind.filler,
-          poolConfig: fillerUnwind.poolConfig,
+          poolId: fillerUnwind.poolId,
         },
         2
       );
@@ -246,9 +255,10 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       const logMessage =
         `Filler has liabilities that cannot be removed\n` +
         `Filler: ${fillerUnwind.filler.name}\n` +
+        `Pool: ${fillerUnwind.poolId}\n` +
         `Positions: ${stringify(filler_user.positions, 2)}`;
       logger.info(logMessage);
-      await sendSlackNotification(fillerUnwind.poolConfig, logMessage);
+      await sendSlackNotification(logMessage);
       return true;
     }
 
@@ -263,16 +273,20 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         logMessage =
           `Dropped auction bid\n` +
           `Type: ${AuctionType[submission.auctionEntry.auction_type]}\n` +
+          `Pool: ${submission.auctionEntry.pool_id}\n` +
           `User: ${submission.auctionEntry.user_id}\n` +
           `Start Block: ${submission.auctionEntry.start_block}\n` +
           `Fill Block: ${submission.auctionEntry.fill_block}\n` +
           `Filler: ${submission.filler.name}\n`;
         break;
       case BidderSubmissionType.UNWIND:
-        logMessage = `Dropped filler unwind\n` + `Filler: ${submission.filler.name}\n`;
+        logMessage =
+          `Dropped filler unwind\n` +
+          `Filler: ${submission.filler.name}\n ` +
+          `Pool: ${submission.poolId}`;
         break;
     }
     logger.error(logMessage);
-    await sendSlackNotification(submission.poolConfig, logMessage);
+    await sendSlackNotification(logMessage);
   }
 }

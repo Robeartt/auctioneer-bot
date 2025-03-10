@@ -7,13 +7,10 @@ import {
   parseError,
   Pool,
   PoolContract,
-  PoolContractV1,
   PoolOracle,
   PoolUser,
   PoolV1,
-  PoolV2,
   PositionsEstimate,
-  Version,
 } from '@blend-capital/blend-sdk';
 import {
   Account,
@@ -28,7 +25,7 @@ import {
   TransactionBuilder,
   xdr,
 } from '@stellar/stellar-sdk';
-import { APP_CONFIG, PoolConfig } from './config.js';
+import { APP_CONFIG } from './config.js';
 import { logger } from './logger.js';
 
 export interface PoolUserEst {
@@ -72,83 +69,83 @@ export class SorobanHelper {
     }
   }
 
-  async loadPool(config: PoolConfig): Promise<Pool> {
-    let cachedPool = this.pool_cache.get(config.poolAddress);
+  async loadPool(poolId: string): Promise<Pool> {
+    let cachedPool = this.pool_cache.get(poolId);
     try {
       if (cachedPool) {
         if ('timeout' in cachedPool && cachedPool.timeout > Date.now()) throw cachedPool.error;
         else if (cachedPool instanceof Pool) return cachedPool;
       }
-      let pool: Pool = await PoolV1.load(this.network, config.poolAddress);
-      this.pool_cache.set(config.poolAddress, pool);
+      let pool: Pool = await PoolV1.load(this.network, poolId);
+      this.pool_cache.set(poolId, pool);
       return pool;
     } catch (e) {
-      this.pool_cache.set(config.poolAddress, { timeout: Date.now() + 5000, error: e });
-      logger.error(`Error loading ${config.name} pool:  ${e}`);
+      this.pool_cache.set(poolId, { timeout: Date.now() + 5000, error: e });
+      logger.error(`Error loading ${poolId} pool:  ${e}`);
       throw e;
     }
   }
 
-  async loadUser(config: PoolConfig, userId: string): Promise<PoolUser> {
-    let cachedUser = this.user_cache.get(config.poolAddress + userId);
+  async loadUser(poolId: string, userId: string): Promise<PoolUser> {
+    let cachedUser = this.user_cache.get(poolId + userId);
     try {
       if (cachedUser) {
         if ('timeout' in cachedUser && cachedUser.timeout > Date.now()) throw cachedUser.error;
         else if (cachedUser instanceof PoolUser) return cachedUser;
       }
-      const pool = await this.loadPool(config);
+      const pool = await this.loadPool(poolId);
       const user = await pool.loadUser(userId);
 
-      this.user_cache.set(config.poolAddress + userId, user);
+      this.user_cache.set(poolId + userId, user);
       return user;
     } catch (e) {
-      this.user_cache.set(config.poolAddress + userId, { timeout: Date.now() + 5000, error: e });
-      logger.error(`Error loading user: ${userId} in pool: ${config.name} Error: ${e}`);
+      this.user_cache.set(poolId + userId, { timeout: Date.now() + 5000, error: e });
+      logger.error(`Error loading user: ${userId} in pool: ${poolId} Error: ${e}`);
       throw e;
     }
   }
 
-  async loadPoolOracle(config: PoolConfig): Promise<PoolOracle> {
-    let cachedOracle = this.oracle_cache.get(config.poolAddress);
+  async loadPoolOracle(poolId: string): Promise<PoolOracle> {
+    let cachedOracle = this.oracle_cache.get(poolId);
     try {
       if (cachedOracle) {
         if ('timeout' in cachedOracle && cachedOracle.timeout > Date.now())
           throw cachedOracle.error;
         else if (cachedOracle instanceof PoolOracle) return cachedOracle;
       }
-      const pool = await this.loadPool(config);
+      const pool = await this.loadPool(poolId);
       const oracle = await pool.loadOracle();
-      this.oracle_cache.set(config.poolAddress, oracle);
+      this.oracle_cache.set(poolId, oracle);
       return oracle;
     } catch (e) {
-      this.oracle_cache.set(config.poolAddress, { timeout: Date.now() + 5000, error: e });
-      logger.error(`Error loading pool oracle for pool: ${config.name} Error: ${e}`);
+      this.oracle_cache.set(poolId, { timeout: Date.now() + 5000, error: e });
+      logger.error(`Error loading pool oracle for pool: ${poolId} Error: ${e}`);
       throw e;
     }
   }
 
-  async loadUserPositionEstimate(config: PoolConfig, userId: string): Promise<PoolUserEst> {
+  async loadUserPositionEstimate(poolId: string, userId: string): Promise<PoolUserEst> {
     try {
-      const pool = await this.loadPool(config);
-      const user = await this.loadUser(config, userId);
-      const poolOracle = await this.loadPoolOracle(config);
+      const pool = await this.loadPool(poolId);
+      const user = await this.loadUser(poolId, userId);
+      const poolOracle = await this.loadPoolOracle(poolId);
       return { estimate: PositionsEstimate.build(pool, poolOracle, user.positions), user };
     } catch (e) {
       logger.error(
-        `Error loading user position estimate for user: ${userId} in pool: ${config.name} Error: ${e}`
+        `Error loading user position estimate for user: ${userId} in pool: ${poolId} Error: ${e}`
       );
       throw e;
     }
   }
 
   async loadAuction(
-    config: PoolConfig,
+    poolId: string,
     userId: string,
     auctionType: number
   ): Promise<Auction | undefined> {
     try {
       const stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
-      const ledgerKey = AuctionData.ledgerKey(config.poolAddress, {
+      const ledgerKey = AuctionData.ledgerKey(poolId, {
         auct_type: auctionType,
         user: userId,
       });
@@ -161,7 +158,7 @@ export class SorobanHelper {
       );
       return new Auction(userId, auctionType, auctionData);
     } catch (e) {
-      logger.error(`Error loading auction for user: ${userId} in pool: ${config.name} Error: ${e}`);
+      logger.error(`Error loading auction for user: ${userId} in pool: ${poolId} Error: ${e}`);
       throw e;
     }
   }

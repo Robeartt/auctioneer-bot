@@ -1,5 +1,4 @@
 import { PoolEvent } from '@blend-capital/blend-sdk';
-import { PoolConfig } from './utils/config.js';
 export enum EventType {
   VALIDATE_POOLS = 'validate_pools',
   LEDGER = 'ledger',
@@ -51,7 +50,7 @@ export interface PoolEventEvent extends BaseEvent {
 
 export interface ValidatePoolsEvent extends BaseEvent {
   type: EventType.VALIDATE_POOLS;
-  pools: PoolConfig[];
+  pools: string[];
 }
 
 /**
@@ -91,7 +90,7 @@ export interface UserRefreshEvent extends BaseEvent {
  */
 export interface CheckUserEvent extends BaseEvent {
   type: EventType.CHECK_USER;
-  poolConfig: PoolConfig;
+  poolId: string;
   /**
    * The user to check.
    */

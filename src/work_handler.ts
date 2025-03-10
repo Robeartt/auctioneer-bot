@@ -78,17 +78,17 @@ export class WorkHandler {
   async processEvent(appEvent: AppEvent): Promise<void> {
     switch (appEvent.type) {
       case EventType.VALIDATE_POOLS: {
-        for (const config of appEvent.pools) {
+        for (const poolId of appEvent.pools) {
           try {
-            let pool = await this.sorobanHelper.loadPool(config);
+            let pool = await this.sorobanHelper.loadPool(poolId);
             if (pool.metadata.backstop !== APP_CONFIG.backstopAddress) {
               throw new Error(
-                `Backstop address for pool: ${config.poolAddress} is not the expected address: ${APP_CONFIG.backstopAddress}`
+                `Backstop address for pool: ${poolId} is not the expected address: ${APP_CONFIG.backstopAddress}`
               );
             }
           } catch (error) {
             throw new Error(
-              `Failed to load pool: ${config.poolAddress} please check that the pool config is correct. Error: ${error}`
+              `Failed to load pool: ${poolId} please check that the address is correct and the pool is version 1. Error: ${error}`
             );
           }
         }
@@ -100,25 +100,19 @@ export class WorkHandler {
         break;
       }
       case EventType.ORACLE_SCAN: {
-        for (const poolConfig of APP_CONFIG.poolConfigs) {
+        for (const poolId of APP_CONFIG.pools) {
           let usersToCheck = new Set<string>();
-          const poolOracle = await this.sorobanHelper.loadPoolOracle(poolConfig);
+          const poolOracle = await this.sorobanHelper.loadPoolOracle(poolId);
           const priceChanges = this.oracleHistory.getSignificantPriceChanges(poolOracle);
           // @dev: Insert into a set to ensure uniqueness
           for (const assetId of priceChanges.up) {
-            const usersWithLiability = this.db.getUserEntriesWithLiability(
-              poolConfig.poolAddress,
-              assetId
-            );
+            const usersWithLiability = this.db.getUserEntriesWithLiability(poolId, assetId);
             for (const user of usersWithLiability) {
               usersToCheck.add(user.user_id);
             }
           }
           for (const assetId of priceChanges.down) {
-            const usersWithCollateral = this.db.getUserEntriesWithCollateral(
-              poolConfig.poolAddress,
-              assetId
-            );
+            const usersWithCollateral = this.db.getUserEntriesWithCollateral(poolId, assetId);
             for (const user of usersWithCollateral) {
               usersToCheck.add(user.user_id);
             }
@@ -126,7 +120,7 @@ export class WorkHandler {
           const liquidations = await checkUsersForLiquidationsAndBadDebt(
             this.db,
             this.sorobanHelper,
-            poolConfig,
+            poolId,
             Array.from(usersToCheck)
           );
           for (const liquidation of liquidations) {
@@ -150,25 +144,26 @@ export class WorkHandler {
 
         for (const user of oldUsers) {
           try {
-            const poolConfig = APP_CONFIG.poolConfigs.find((p) => p.poolAddress === user.pool_id);
-            if (!poolConfig) {
+            const poolId = APP_CONFIG.pools.find((pool) => pool === user.pool_id);
+            if (!poolId) {
               if (user.updated < appEvent.cutoff) {
                 this.db.deleteUserEntry(user.pool_id, user.user_id);
-                logger.warn(
-                  `Pool config not found for user: ${user.user_id} in pool: ${user.pool_id}. Deleting user.`
-                );
+                logger.warn(`User found in unsupported pool. Deleting user.`);
               }
               continue;
             }
             if (user.updated < appEvent.cutoff) {
-              const logMessage = `User: ${user.user_id} in Pool: ${user.pool_id} has not updated since ledger: ${appEvent.cutoff}.`;
+              const logMessage =
+                `Warning user has not been updated since ledger ${appEvent.cutoff}\n` +
+                `Pool: ${poolId}\n` +
+                `User: ${user.user_id}`;
               logger.error(logMessage);
-              await sendSlackNotification(poolConfig, logMessage);
+              await sendSlackNotification(logMessage);
             }
-            const pool = await this.sorobanHelper.loadPool(poolConfig);
+            const pool = await this.sorobanHelper.loadPool(poolId);
 
             const { estimate: poolUserEstimate, user: poolUser } =
-              await this.sorobanHelper.loadUserPositionEstimate(poolConfig, user.user_id);
+              await this.sorobanHelper.loadUserPositionEstimate(poolId, user.user_id);
             updateUser(this.db, pool, poolUser, poolUserEstimate);
           } catch (e) {
             logger.error(`Error refreshing user ${user.user_id} in pool ${user.pool_id}: ${e}`);
@@ -180,7 +175,7 @@ export class WorkHandler {
         const submissions = await checkUsersForLiquidationsAndBadDebt(
           this.db,
           this.sorobanHelper,
-          appEvent.poolConfig,
+          appEvent.poolId,
           [appEvent.userId]
         );
         for (const submission of submissions) {
