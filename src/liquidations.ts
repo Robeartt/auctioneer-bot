@@ -142,7 +142,7 @@ export async function checkUsersForLiquidationsAndBadDebt(
       const errorLog =
         `Error checking for bad debt or liquidation\n` +
         `Pool: ${poolId}\n` +
-        `User: ${user}\n ` +
+        `User: ${user}\n` +
         `Error: ${e}`;
       logger.error(errorLog);
       sendSlackNotification(errorLog);
