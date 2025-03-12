@@ -2,7 +2,7 @@
 
 # Set variables
 DB_PATH="./data/auctioneer.sqlite"
-MIGRATION_SCRIPT="./migrate_db_v1_to_v2.sql"
+MIGRATION_SCRIPT="./db/migrate_db_v1_to_v2.sql"
 
 PREV_POOL_ID=""
 
