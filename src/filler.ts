@@ -23,18 +23,21 @@ const MAX_WITHDRAW = BigInt('9223372036854775807');
  * @param auctionData - The auction data for the auction
  * @returns A boolean indicating if the filler cares about the auction.
  */
-export function canFillerBid(filler: Filler, auctionData: AuctionData): boolean {
+export function canFillerBid(filler: Filler, poolId: string, auctionData: AuctionData): boolean {
   // validate lot
+
+  if (filler.supportedPools.find((pool) => pool.poolAddress === poolId) === undefined) {
+    return false;
+  }
+
   for (const [assetId, _] of auctionData.lot) {
     if (!filler.supportedLot.some((address) => assetId === address)) {
-      logger.info("Filler doesn't support lot asset: " + assetId);
       return false;
     }
   }
   // validate bid
   for (const [assetId, _] of auctionData.bid) {
     if (!filler.supportedBid.some((address) => assetId === address)) {
-      logger.info("Filler doesn't support bid asset: " + assetId);
       return false;
     }
   }

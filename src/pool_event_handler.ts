@@ -107,7 +107,7 @@ export class PoolEventHandler {
         let fillerFound = false;
         for (const filler of APP_CONFIG.fillers) {
           // check if filler should try and bid on the auction
-          if (!canFillerBid(filler, poolEvent.event.auctionData)) {
+          if (!canFillerBid(filler, poolId, poolEvent.event.auctionData)) {
             continue;
           }
           let auctionEntry: AuctionEntry = {
