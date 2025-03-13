@@ -32,13 +32,21 @@ jest.mock('../src/utils/logger.js', () => ({
 jest.mock('../src/utils/config.js', () => {
   let config: AppConfig = {
     backstopAddress: Keypair.random().publicKey(),
+    pools: ['mockPoolId'],
     fillers: [
       {
         name: 'filler1',
         keypair: Keypair.random(),
         defaultProfitPct: 0.05,
-        minHealthFactor: 1.1,
-        forceFill: true,
+        supportedPools: [
+          {
+            poolAddress: 'mockPoolId',
+            minPrimaryCollateral: FixedMath.toFixed(100, 7),
+            primaryAsset: 'USD',
+            minHealthFactor: 1.1,
+            forceFill: true,
+          },
+        ],
         supportedBid: ['USD', 'BTC', 'LP'],
         supportedLot: ['USD', 'BTC', 'ETH'],
       },
@@ -46,18 +54,18 @@ jest.mock('../src/utils/config.js', () => {
         name: 'filler2',
         keypair: Keypair.random(),
         defaultProfitPct: 0.08,
-        minHealthFactor: 1.1,
-        forceFill: true,
+
+        supportedPools: [
+          {
+            poolAddress: 'mockPoolId',
+            minPrimaryCollateral: FixedMath.toFixed(100, 7),
+            primaryAsset: 'USD',
+            minHealthFactor: 1.1,
+            forceFill: true,
+          },
+        ],
         supportedBid: ['USD', 'ETH', 'XLM'],
         supportedLot: ['USD', 'ETH', 'XLM'],
-      },
-    ],
-    poolConfigs: [
-      {
-        name: 'mockPool',
-        poolAddress: 'mockPoolId',
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
-        primaryAsset: 'USD',
       },
     ],
   } as AppConfig;
@@ -357,11 +365,7 @@ describe('poolEventHandler', () => {
 
     await poolEventHandler.handlePoolEvent(poolEvent);
 
-    let auctionEntry = db.getAuctionEntry(
-      APP_CONFIG.poolConfigs[0].poolAddress,
-      user,
-      AuctionType.Liquidation
-    );
+    let auctionEntry = db.getAuctionEntry('mockPoolId', user, AuctionType.Liquidation);
     if (auctionEntry === undefined) {
       fail('Auction entry not inserted');
     }
@@ -398,7 +402,7 @@ describe('poolEventHandler', () => {
     await poolEventHandler.handlePoolEvent(poolEvent);
 
     let auctionEntry = db.getAuctionEntry(
-      APP_CONFIG.poolConfigs[0].poolAddress,
+      'mockPoolId',
       APP_CONFIG.backstopAddress,
       AuctionType.Interest
     );
@@ -438,7 +442,7 @@ describe('poolEventHandler', () => {
     await poolEventHandler.handlePoolEvent(poolEvent);
 
     let auctionEntry = db.getAuctionEntry(
-      APP_CONFIG.poolConfigs[0].poolAddress,
+      'mockPoolId',
       APP_CONFIG.backstopAddress,
       AuctionType.BadDebt
     );
@@ -487,7 +491,7 @@ describe('poolEventHandler', () => {
     let other_user = Keypair.random().publicKey();
     let user = Keypair.random().publicKey();
     let auction: AuctionEntry = {
-      pool_id: APP_CONFIG.poolConfigs[0].poolAddress,
+      pool_id: 'mockPoolId',
       user_id: other_user,
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -496,7 +500,7 @@ describe('poolEventHandler', () => {
       updated: 12345,
     };
     let auction_to_be_deleted: AuctionEntry = {
-      pool_id: APP_CONFIG.poolConfigs[0].poolAddress,
+      pool_id: 'mockPoolId',
       user_id: user,
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -530,18 +534,14 @@ describe('poolEventHandler', () => {
 
     let auctionEntries = db.getAllAuctionEntries();
     expect(auctionEntries.length).toEqual(1);
-    let deletedAuction = db.getAuctionEntry(
-      APP_CONFIG.poolConfigs[0].poolAddress,
-      user,
-      AuctionType.Liquidation
-    );
+    let deletedAuction = db.getAuctionEntry('mockPoolId', user, AuctionType.Liquidation);
     expect(deletedAuction).toBeUndefined();
   });
 
   it('deletes fill auction and updates user safely for liquidation fill auction event', async () => {
     let other_user = Keypair.random().publicKey();
     let other_auction: AuctionEntry = {
-      pool_id: APP_CONFIG.poolConfigs[0].poolAddress,
+      pool_id: 'mockPoolId',
       user_id: other_user,
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -550,7 +550,7 @@ describe('poolEventHandler', () => {
       updated: 12345,
     };
     let auction_to_be_filled: AuctionEntry = {
-      pool_id: APP_CONFIG.poolConfigs[0].poolAddress,
+      pool_id: 'mockPoolId',
       user_id: pool_user,
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -609,11 +609,7 @@ describe('poolEventHandler', () => {
 
     let entries = db.getAllAuctionEntries();
     expect(entries.length).toEqual(1);
-    let deletedAuction = db.getAuctionEntry(
-      APP_CONFIG.poolConfigs[0].poolAddress,
-      pool_user,
-      AuctionType.Liquidation
-    );
+    let deletedAuction = db.getAuctionEntry('mockPoolId', pool_user, AuctionType.Liquidation);
     expect(deletedAuction).toBeUndefined();
     expect(mockedUpdateUser).toHaveBeenCalledWith(db, mockPool, user, estimate, 12350);
   });
@@ -621,7 +617,7 @@ describe('poolEventHandler', () => {
   it('deletes fill auction for other fill auction event', async () => {
     let other_user = Keypair.random().publicKey();
     let other_auction: AuctionEntry = {
-      pool_id: APP_CONFIG.poolConfigs[0].poolAddress,
+      pool_id: 'mockPoolId',
       user_id: other_user,
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -630,7 +626,7 @@ describe('poolEventHandler', () => {
       updated: 12345,
     };
     let auction_to_be_filled: AuctionEntry = {
-      pool_id: APP_CONFIG.poolConfigs[0].poolAddress,
+      pool_id: 'mockPoolId',
       user_id: APP_CONFIG.backstopAddress,
       auction_type: AuctionType.Interest,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -667,7 +663,7 @@ describe('poolEventHandler', () => {
     let entries = db.getAllAuctionEntries();
     expect(entries.length).toEqual(1);
     let deletedAuction = db.getAuctionEntry(
-      APP_CONFIG.poolConfigs[0].poolAddress,
+      'mockPoolId',
       APP_CONFIG.backstopAddress,
       AuctionType.Interest
     );
@@ -701,7 +697,7 @@ describe('poolEventHandler', () => {
 
   it('Sends check user event for backstop on bad debt fills', async () => {
     let auction_to_be_filled: AuctionEntry = {
-      pool_id: APP_CONFIG.poolConfigs[0].poolAddress,
+      pool_id: 'mockPoolId',
       user_id: APP_CONFIG.backstopAddress,
       auction_type: AuctionType.BadDebt,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -734,7 +730,7 @@ describe('poolEventHandler', () => {
     expect(mockedSendEvent).toHaveBeenCalledWith(mockedWorkerProcess, {
       type: EventType.CHECK_USER,
       timestamp: Date.now(),
-      poolConfig: APP_CONFIG.poolConfigs[0],
+      poolId: 'mockPoolId',
       userId: APP_CONFIG.backstopAddress,
     });
   });
@@ -762,12 +758,12 @@ describe('poolEventHandler', () => {
     expect(mockedSendEvent).toHaveBeenCalledWith(mockedWorkerProcess, {
       type: EventType.CHECK_USER,
       timestamp: Date.now(),
-      poolConfig: APP_CONFIG.poolConfigs[0],
+      poolId: 'mockPoolId',
       userId: APP_CONFIG.backstopAddress,
     });
   });
 
-  it('Short circuits when pool config is not found', async () => {
+  it('Short circuits when pool id is not found in config pools', async () => {
     let poolEvent: PoolEventEvent = {
       timestamp: 777,
       type: EventType.POOL_EVENT,

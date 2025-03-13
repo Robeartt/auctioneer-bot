@@ -7,7 +7,7 @@ import {
   isLiquidatable,
   scanUsers,
 } from '../src/liquidations';
-import { APP_CONFIG, PoolConfig } from '../src/utils/config.js';
+import { APP_CONFIG } from '../src/utils/config.js';
 import { AuctioneerDatabase } from '../src/utils/db.js';
 import { PoolUserEst, SorobanHelper } from '../src/utils/soroban_helper.js';
 import { WorkSubmissionType } from '../src/work_submitter.js';
@@ -24,20 +24,7 @@ jest.mock('../src/utils/config.js', () => {
   return {
     APP_CONFIG: {
       backstopAddress: 'backstopAddress',
-      poolConfigs: [
-        {
-          name: 'test-pool',
-          poolAddress: 'pool1',
-          primaryAsset: 'asset1',
-          minPrimaryCollateral: 123n,
-        },
-        {
-          name: 'test-pool2',
-          poolAddress: 'pool2',
-          primaryAsset: 'asset2',
-          minPrimaryCollateral: 123n,
-        },
-      ],
+      pools: ['pool1', 'pool2'],
     },
   };
 });
@@ -187,13 +174,13 @@ describe('scanUsers', () => {
       updated: 123,
     });
     mockedSorobanHelper.loadUserPositionEstimate.mockImplementation(
-      (config: PoolConfig, address: string) => {
-        if (address === mockPoolUser.userId) {
+      (poolId: string, userId: string) => {
+        if (userId === mockPoolUser.userId) {
           return Promise.resolve({
             estimate: mockPoolUserEstimate,
             user: mockPoolUser,
           } as PoolUserEst);
-        } else if (address === 'backstopAddress') {
+        } else if (userId === 'backstopAddress') {
           return Promise.resolve({
             estimate: mockBackstopPositionsEstimate,
             user: mockBackstopPositions,
@@ -224,13 +211,13 @@ describe('scanUsers', () => {
       updated: 123,
     });
     mockedSorobanHelper.loadUserPositionEstimate.mockImplementation(
-      (poolConfig: PoolConfig, address: string) => {
-        if (address === mockPoolUser.userId) {
+      (poolId: string, userId: string) => {
+        if (userId === mockPoolUser.userId) {
           return Promise.resolve({
             estimate: mockPoolUserEstimate,
             user: mockPoolUser,
           } as PoolUserEst);
-        } else if (address === 'backstopAddress') {
+        } else if (userId === 'backstopAddress') {
           return Promise.resolve({
             estimate: mockBackstopPositionsEstimate,
             user: mockBackstopPositions,
@@ -249,13 +236,13 @@ describe('scanUsers', () => {
     mockBackstopPositionsEstimate.totalEffectiveLiabilities = 1000;
     mockBackstopPositionsEstimate.totalEffectiveCollateral = 0;
     mockedSorobanHelper.loadUserPositionEstimate.mockImplementation(
-      (poolConfig: PoolConfig, address: string) => {
-        if (address === mockPoolUser.userId) {
+      (poolId: string, userId: string) => {
+        if (userId === mockPoolUser.userId) {
           return Promise.resolve({
             estimate: mockPoolUserEstimate,
             user: mockPoolUser,
           } as PoolUserEst);
-        } else if (address === APP_CONFIG.backstopAddress) {
+        } else if (userId === APP_CONFIG.backstopAddress) {
           return Promise.resolve({
             estimate: mockBackstopPositionsEstimate,
             user: mockBackstopPositions,
@@ -277,12 +264,7 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
   let mockBackstopPositionsEstimate: PositionsEstimate;
   let mockUser: PoolUser;
   let mockUserEstimate: PositionsEstimate;
-  let poolConfig: PoolConfig = {
-    name: 'test-pool',
-    poolAddress: mockPool.id,
-    minPrimaryCollateral: 123n,
-    primaryAsset: USDC,
-  };
+
   beforeEach(() => {
     db = inMemoryAuctioneerDb();
     mockedSorobanHelper = new SorobanHelper() as jest.Mocked<SorobanHelper>;
@@ -305,7 +287,7 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
     const result = await checkUsersForLiquidationsAndBadDebt(
       db,
       mockedSorobanHelper,
-      poolConfig,
+      mockPool.id,
       []
     );
     expect(result).toEqual([]);
@@ -330,14 +312,14 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
     const result = await checkUsersForLiquidationsAndBadDebt(
       db,
       mockedSorobanHelper,
-      poolConfig,
+      mockPool.id,
       user_ids
     );
 
     expect(result).toEqual([
       {
         type: WorkSubmissionType.BadDebtAuction,
-        poolConfig,
+        poolId: mockPool.id,
       },
     ]);
   });
@@ -363,7 +345,7 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
     const result = await checkUsersForLiquidationsAndBadDebt(
       db,
       mockedSorobanHelper,
-      poolConfig,
+      mockPool.id,
       user_ids
     );
 
@@ -371,7 +353,7 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
     expect(result).toEqual([
       {
         type: WorkSubmissionType.LiquidateUser,
-        poolConfig,
+        poolId: mockPool.id,
         user: 'user1',
         liquidationPercent: 56n,
       },
@@ -392,13 +374,13 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
     const result = await checkUsersForLiquidationsAndBadDebt(
       db,
       mockedSorobanHelper,
-      poolConfig,
+      mockPool.id,
       user_ids
     );
 
     expect(result.length).toBe(1);
     expect(result).toEqual([
-      { type: WorkSubmissionType.BadDebtTransfer, user: 'user1', poolConfig },
+      { type: WorkSubmissionType.BadDebtTransfer, user: 'user1', poolId: mockPool.id },
     ]);
   });
 });

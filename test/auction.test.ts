@@ -10,7 +10,7 @@ import {
 import { Keypair } from '@stellar/stellar-sdk';
 import { calculateAuctionFill, valueBackstopTokenInUSDC } from '../src/auction.js';
 import { getFillerAvailableBalances, getFillerProfitPct } from '../src/filler.js';
-import { Filler, PoolConfig } from '../src/utils/config.js';
+import { Filler } from '../src/utils/config.js';
 import { AuctioneerDatabase } from '../src/utils/db.js';
 import { SorobanHelper } from '../src/utils/soroban_helper.js';
 import {
@@ -66,11 +66,19 @@ describe('auctions', () => {
       name: 'Tester',
       keypair: Keypair.random(),
       defaultProfitPct: 0.1,
-      minHealthFactor: 1.2,
-      forceFill: true,
+      supportedPools: [
+        {
+          poolAddress: mockPool.id,
+          primaryAsset: USDC,
+          minPrimaryCollateral: 100n,
+          minHealthFactor: 1.2,
+          forceFill: true,
+        },
+      ],
       supportedBid: [],
       supportedLot: [],
     };
+
     positionEstimate = {
       totalBorrowed: 0,
       totalSupplied: 0,
@@ -99,12 +107,6 @@ describe('auctions', () => {
 
   describe('calcAuctionFill', () => {
     // *** Interest Auctions ***
-    const poolConfig: PoolConfig = {
-      name: 'test-pool',
-      poolAddress: mockPool.id,
-      minPrimaryCollateral: 123n,
-      primaryAsset: USDC,
-    };
     it('calcs fill for interest auction', async () => {
       let nextLedger = MOCK_LEDGER + 1;
       let auction = new Auction(BACKSTOP, AuctionType.Interest, {
@@ -124,7 +126,7 @@ describe('auctions', () => {
       );
 
       let fill = await calculateAuctionFill(
-        poolConfig,
+        mockPool.id,
         filler,
         auction,
         nextLedger,
@@ -171,7 +173,7 @@ describe('auctions', () => {
       );
 
       let fill = await calculateAuctionFill(
-        poolConfig,
+        mockPool.id,
         filler,
         auction,
         nextLedger,
@@ -212,7 +214,7 @@ describe('auctions', () => {
       );
 
       let fill = await calculateAuctionFill(
-        poolConfig,
+        mockPool.id,
         filler,
         auction,
         nextLedger,
@@ -261,7 +263,7 @@ describe('auctions', () => {
       );
 
       let fill = await calculateAuctionFill(
-        poolConfig,
+        mockPool.id,
         filler,
         auction,
         nextLedger,
@@ -301,9 +303,9 @@ describe('auctions', () => {
         new Map<string, bigint>([[BACKSTOP_TOKEN, FixedMath.toFixed(1000)]])
       );
 
-      filler.forceFill = true;
+      filler.supportedPools[0].forceFill = true;
       let fill_force = await calculateAuctionFill(
-        poolConfig,
+        mockPool.id,
         filler,
         auction,
         nextLedger,
@@ -311,9 +313,9 @@ describe('auctions', () => {
         db
       );
 
-      filler.forceFill = false;
+      filler.supportedPools[0].forceFill = false;
       let fill_no_force = await calculateAuctionFill(
-        poolConfig,
+        mockPool.id,
         filler,
         auction,
         nextLedger,
@@ -367,7 +369,7 @@ describe('auctions', () => {
       );
 
       let fill = await calculateAuctionFill(
-        poolConfig,
+        mockPool.id,
         filler,
         auction,
         nextLedger,
@@ -423,7 +425,7 @@ describe('auctions', () => {
       );
 
       let fill = await calculateAuctionFill(
-        poolConfig,
+        mockPool.id,
         filler,
         auction,
         nextLedger,
@@ -482,7 +484,7 @@ describe('auctions', () => {
       );
 
       let fill = await calculateAuctionFill(
-        poolConfig,
+        mockPool.id,
         filler,
         auction,
         nextLedger,
@@ -535,7 +537,7 @@ describe('auctions', () => {
       mockedGetFilledAvailableBalances.mockResolvedValue(new Map<string, bigint>([]));
 
       let fill = await calculateAuctionFill(
-        poolConfig,
+        mockPool.id,
         filler,
         auction,
         nextLedger,
@@ -576,7 +578,7 @@ describe('auctions', () => {
       mockedGetFilledAvailableBalances.mockResolvedValue(new Map<string, bigint>([]));
 
       let fill = await calculateAuctionFill(
-        poolConfig,
+        mockPool.id,
         filler,
         auction,
         nextLedger,
@@ -622,7 +624,7 @@ describe('auctions', () => {
       );
 
       let fill = await calculateAuctionFill(
-        poolConfig,
+        mockPool.id,
         filler,
         auction,
         nextLedger,
@@ -681,7 +683,7 @@ describe('auctions', () => {
       );
 
       let fill = await calculateAuctionFill(
-        poolConfig,
+        mockPool.id,
         filler,
         auction,
         nextLedger,
@@ -747,7 +749,7 @@ describe('auctions', () => {
       );
 
       let fill = await calculateAuctionFill(
-        poolConfig,
+        mockPool.id,
         filler,
         auction,
         nextLedger,

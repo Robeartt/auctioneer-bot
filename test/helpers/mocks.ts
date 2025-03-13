@@ -55,6 +55,6 @@ export let mockPoolOracle = new PoolOracle(
 
 export function inMemoryAuctioneerDb(): AuctioneerDatabase {
   let db = new Database(':memory:');
-  db.exec(fs.readFileSync(path.resolve(__dirname, '../../init_db.sql'), 'utf8'));
+  db.exec(fs.readFileSync(path.resolve(__dirname, '../../db/init_db.sql'), 'utf8'));
   return new AuctioneerDatabase(db);
 }

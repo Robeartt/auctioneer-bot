@@ -1,22 +1,14 @@
-import { PoolConfig } from '../src/utils/config';
 import { createFilter } from '../src/collector';
 
 describe('createFilter', () => {
-  it('should return an empty array when no pool configs are provided', () => {
-    const poolConfigs: PoolConfig[] = [];
+  it('should return an empty array when no pool ids are provided', () => {
+    const poolConfigs: [] = [];
     const result = createFilter(poolConfigs);
     expect(result).toEqual([]);
   });
 
   it('should create a single filter with one contract ID when one pool config is provided', () => {
-    const poolConfigs: PoolConfig[] = [
-      {
-        name: 'Test Pool',
-        poolAddress: 'pool1',
-        primaryAsset: 'USDC',
-        minPrimaryCollateral: BigInt(100),
-      },
-    ];
+    const poolConfigs: string[] = ['pool1'];
 
     const expected = [
       {
@@ -30,38 +22,7 @@ describe('createFilter', () => {
   });
 
   it('should create a single filter when pool configs are less than or equal to 5', () => {
-    const poolConfigs: PoolConfig[] = [
-      {
-        name: 'Pool 1',
-        poolAddress: 'pool1',
-        primaryAsset: 'USDC',
-        minPrimaryCollateral: BigInt(100),
-      },
-      {
-        name: 'Pool 2',
-        poolAddress: 'pool2',
-        primaryAsset: 'USDC',
-        minPrimaryCollateral: BigInt(100),
-      },
-      {
-        name: 'Pool 3',
-        poolAddress: 'pool3',
-        primaryAsset: 'USDC',
-        minPrimaryCollateral: BigInt(100),
-      },
-      {
-        name: 'Pool 4',
-        poolAddress: 'pool4',
-        primaryAsset: 'USDC',
-        minPrimaryCollateral: BigInt(100),
-      },
-      {
-        name: 'Pool 5',
-        poolAddress: 'pool5',
-        primaryAsset: 'USDC',
-        minPrimaryCollateral: BigInt(100),
-      },
-    ];
+    const poolConfigs: string[] = ['pool1', 'pool2', 'pool3', 'pool4', 'pool5'];
 
     const expected = [
       {
@@ -75,50 +36,7 @@ describe('createFilter', () => {
   });
 
   it('should create multiple filters when pool configs are more than 5', () => {
-    const poolConfigs: PoolConfig[] = [
-      {
-        name: 'Pool 1',
-        poolAddress: 'pool1',
-        primaryAsset: 'USDC',
-        minPrimaryCollateral: BigInt(100),
-      },
-      {
-        name: 'Pool 2',
-        poolAddress: 'pool2',
-        primaryAsset: 'USDC',
-        minPrimaryCollateral: BigInt(100),
-      },
-      {
-        name: 'Pool 3',
-        poolAddress: 'pool3',
-        primaryAsset: 'USDC',
-        minPrimaryCollateral: BigInt(100),
-      },
-      {
-        name: 'Pool 4',
-        poolAddress: 'pool4',
-        primaryAsset: 'USDC',
-        minPrimaryCollateral: BigInt(100),
-      },
-      {
-        name: 'Pool 5',
-        poolAddress: 'pool5',
-        primaryAsset: 'USDC',
-        minPrimaryCollateral: BigInt(100),
-      },
-      {
-        name: 'Pool 6',
-        poolAddress: 'pool6',
-        primaryAsset: 'USDC',
-        minPrimaryCollateral: BigInt(100),
-      },
-      {
-        name: 'Pool 7',
-        poolAddress: 'pool7',
-        primaryAsset: 'USDC',
-        minPrimaryCollateral: BigInt(100),
-      },
-    ];
+    const poolConfigs: string[] = ['pool1', 'pool2', 'pool3', 'pool4', 'pool5', 'pool6', 'pool7'];
 
     const expected = [
       {
@@ -136,12 +54,7 @@ describe('createFilter', () => {
   });
 
   it('should create exactly three filters for 11 pool configs', () => {
-    const poolConfigs: PoolConfig[] = Array.from({ length: 11 }, (_, i) => ({
-      name: `Pool ${i + 1}`,
-      poolAddress: `pool${i + 1}`,
-      primaryAsset: 'USDC',
-      minPrimaryCollateral: BigInt(100),
-    }));
+    const poolConfigs: string[] = Array.from({ length: 11 }, (_, i) => `pool${i + 1}`);
 
     const result = createFilter(poolConfigs);
 

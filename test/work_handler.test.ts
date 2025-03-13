@@ -6,7 +6,7 @@ import { AuctioneerDatabase, UserEntry } from '../src/utils/db';
 import { SorobanHelper } from '../src/utils/soroban_helper';
 import { WorkHandler } from '../src/work_handler';
 import { WorkSubmission, WorkSubmissionType, WorkSubmitter } from '../src/work_submitter';
-import { AppConfig, PoolConfig, APP_CONFIG } from '../src/utils/config';
+import { AppConfig, APP_CONFIG } from '../src/utils/config';
 
 jest.mock('../src/utils/prices');
 jest.mock('../src/liquidations');
@@ -16,20 +16,7 @@ jest.mock('../src/utils/logger');
 jest.mock('../src/utils/soroban_helper');
 jest.mock('../src/utils/config.js', () => {
   let config: AppConfig = {
-    poolConfigs: [
-      {
-        name: 'test-pool1',
-        poolAddress: 'pool1',
-        primaryAsset: 'asset1',
-        minPrimaryCollateral: 123n,
-      },
-      {
-        name: 'test-pool2',
-        poolAddress: 'pool1',
-        primaryAsset: 'asset1',
-        minPrimaryCollateral: 123n,
-      },
-    ],
+    pools: ['pool1', 'pool2'],
   } as AppConfig;
   return {
     APP_CONFIG: config,
@@ -94,13 +81,13 @@ describe('WorkHandler', () => {
     ];
     const liquidations: WorkSubmission[] = [
       {
-        poolConfig: APP_CONFIG.poolConfigs[0],
+        poolId: APP_CONFIG.pools[0],
         user: 'user1',
         type: WorkSubmissionType.LiquidateUser,
         liquidationPercent: 10n,
       },
       {
-        poolConfig: APP_CONFIG.poolConfigs[1],
+        poolId: APP_CONFIG.pools[0],
         user: 'user1',
         type: WorkSubmissionType.LiquidateUser,
         liquidationPercent: 10n,
@@ -114,11 +101,11 @@ describe('WorkHandler', () => {
 
     await workHandler.processEvent(appEvent);
     expect(oracleHistory.getSignificantPriceChanges).toHaveBeenCalledWith(poolOracle);
-    for (const config of APP_CONFIG.poolConfigs) {
-      expect(sorobanHelper.loadPoolOracle).toHaveBeenCalledWith(config);
-      expect(db.getUserEntriesWithLiability).toHaveBeenCalledWith(config.poolAddress, 'asset1');
-      expect(db.getUserEntriesWithCollateral).toHaveBeenCalledWith(config.poolAddress, 'asset2');
-      expect(checkUsersForLiquidationsAndBadDebt).toHaveBeenCalledWith(db, sorobanHelper, config, [
+    for (const poolId of APP_CONFIG.pools) {
+      expect(sorobanHelper.loadPoolOracle).toHaveBeenCalledWith(poolId);
+      expect(db.getUserEntriesWithLiability).toHaveBeenCalledWith(poolId, 'asset1');
+      expect(db.getUserEntriesWithCollateral).toHaveBeenCalledWith(poolId, 'asset2');
+      expect(checkUsersForLiquidationsAndBadDebt).toHaveBeenCalledWith(db, sorobanHelper, poolId, [
         usersWithCollateral[0].user_id,
       ]);
     }
