@@ -83,9 +83,9 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
       }
       await sorobanHelper.submitTransaction(op, APP_CONFIG.keypair);
       const logMessage =
-        `Successfully created user liquidation` +
-        `Pool: ${userLiquidation.poolId}` +
-        `User: ${userLiquidation.user}` +
+        `Successfully created user liquidation\n` +
+        `Pool: ${userLiquidation.poolId}\n` +
+        `User: ${userLiquidation.user}\n` +
         `Liquidation Percent: ${userLiquidation.liquidationPercent}`;
       logger.info(logMessage);
       await sendSlackNotification(logMessage);

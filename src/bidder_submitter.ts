@@ -282,7 +282,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       case BidderSubmissionType.UNWIND:
         logMessage =
           `Dropped filler unwind\n` +
-          `Filler: ${submission.filler.name}\n ` +
+          `Filler: ${submission.filler.name}\n` +
           `Pool: ${submission.poolId}`;
         break;
     }
