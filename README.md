@@ -1,6 +1,6 @@
 # Auctioneer Bot
 
-The auctioneer bot monitors a Blend pool to create and bid on auctions. This includes user liquidation auctions, bad debt auctions, and interest auctions. The auctioneer focuses on completeness and pool safety over profit, but the existing code can be modified to meet any use case.
+The auctioneer bot monitors Blend V1 pools to create and bid on auctions. This includes user liquidation auctions, bad debt auctions, and interest auctions. The auctioneer focuses on completeness and pool safety over profit, but the existing code can be modified to meet any use case.
 
 For more information please see [the Blend docs](https://docs.blend.capital/tech-docs/core-contracts/lending-pool).
 
@@ -33,6 +33,8 @@ Auctions filled by the bot will have an entry populated in the `filled_auctions`
 
 ## Important Info
 
+This version only support V1 Blend pools.
+
 This bot does not automatically unwind all positions it bids on. It is recommended to manually adjust your positions as necessary as auctions get filled. 
 
 Certain auctions cause your filler to take on liabilities, and if these assets are not cleared in a timely manner, could result in the filler also getting liquidated.
@@ -40,6 +42,10 @@ Certain auctions cause your filler to take on liabilities, and if these assets a
 ### Configuration
 
 For an example config file that is configured to interact with [Blend v1 mainnet protocol](https://docs.blend.capital/), please see [example.config.json](https://github.com/script3/auctioneer-bot/blob/main/example.config.json).
+
+### Database Migration
+
+For auctioneers that were started before multi-pool functionality a db migration will be neccessary. On startup of the updated auctioneer bot a command line argument will be required to be inputed with `-p` or `--prev-pool-id` followed by the pool id that the single pool auctioneer bot was using. The migration will update the database to the new schema and will populate the pool id column with the one provided.
 
 #### General Settings
 
@@ -53,21 +59,11 @@ For an example config file that is configured to interact with [Blend v1 mainnet
 | `usdcAddress` | The address of the USDC token contract. |
 | `blndAddress` | The address of the BLND token contract. |
 | `keypair` | The secret key for the bot's auction creating account. This should be different from the fillers as auction creation and auction bidding can happen simultaneously. **Keep this secret and secure!** |
-| `poolConfigs` | A list of configs that dicate what pools are monitored |
+| `pools` | A list of pool addresses that dicate what pools are monitored |
 | `fillers` | A list of accounts that will bid and fill on auctions. |
 | `priceSources` | (Optional) A list of assets that will have prices sourced from exchanges instead of the pool oracle. |
 | `profits` | (Optional) A list of auction profits to define different profit percentages used for matching auctions.
 | `slackWebhook` | (Optional) A slack webhook URL to post updates to (https://hooks.slack.com/services/). Leave undefined if no webhooks are required. |
-
-#### Pool Configs
-The `poolConfigs` array contains configurations for pools that are to be monitored.
-
-| Field | Description |
-|-------|-------------|
-| `name` | A unique name for this pool. Used in logs and slack notifications. |
-| `poolAddress` | The address of the pool |
-| `primaryAsset` | The primary asset that will be used as collateral in the pool. | 
-| `minPrimaryCollateral` | The minimum amount of the primary asset that is maintained as collateral in the pool. |
 
 #### Fillers
 
@@ -79,11 +75,20 @@ The `fillers` array contains configurations for individual filler accounts. The 
 | `keypair` | The secret key for this filler account. **Keep this secret and secure!** |
 | `primaryAsset` | The primary asset the filler will use as collateral in the pool. | 
 | `defaultProfitPct` | The default profit percentage required for the filler to bid on an auction, as a decimal. (e.g. 0.08 = 8%) |
-| `minHealthFactor` | The minimum health factor the filler will take on during liquidation and bad debt auctions, as calculated by `collateral / liabilities`. |
-| `minPrimaryCollateral` | The minimum amount of the primary asset the Filler will maintain as collateral in the pool. |
-| `forceFill` | Boolean flag to indicate if the bot should force fill auctions even if profit expectations aren't met to ensure pool health. |
+| `supportedPools` | An array of configs that control what pools the filler can interact |
 | `supportedBid` | An array of asset addresses that this filler bot is allowed to bid with. Bids are taken as additional liabilities (dTokens) for liquidation and bad debt auctions, and tokens for interest auctions. Must include the `backstopTokenAddress` to bid on interest auctions. |
 | `supportedLot` | An array of asset addresses that this filler bot is allowed to receive. Lots are given as collateral (bTokens) for liquidation auctions and tokens for interest and bad debt auctions. The filler should have trustlines to all assets that are Stellar assets. Must include `backstopTokenAddress` to bid on bad debt auctions. |
+
+#### Pool Filler Configs
+The `PoolFillerConfig` array contains configurations for pools that are to be monitored.
+
+| Field | Description |
+|-------|-------------|
+| `poolAddress` | The address of the pool |
+| `primaryAsset` | The primary asset that will be used as collateral in the pool. | 
+| `minPrimaryCollateral` | The minimum amount of the primary asset that is maintained as collateral in the pool. |
+| `minHealthFactor` | The minimum health factor the filler will take on during liquidation and bad debt auctions, as calculated by `collateral / liabilities`. |
+| `forceFill` | Boolean flag to indicate if the bot should force fill auctions even if profit expectations aren't met to ensure pool health. |
 
 #### Price Sources
 
@@ -140,6 +145,8 @@ npm run build:docker-{arm, x86}
 You can then follow the instructions in [Getting Started](#getting-started), but instead use `auctioneer-bot-{arm, x86}` as the docker image.
 
 The bot can also be run locally with node, but you will need to invoke `start.sh` to initialize a database at `./data` and a location to place logs at `./data/logs`.
+
+
 
 
 

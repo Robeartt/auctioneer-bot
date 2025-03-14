@@ -3,27 +3,26 @@
   "rpcURL": "http://localhost:8000",
   "networkPassphrase": "Public Global Stellar Network ; September 2015",
   "horizonURL": "http://horizon:8000",
-  "poolAddress": "C...",
   "backstopAddress": "CAO3AGAMZVRMHITL36EJ2VZQWKYRPWMQAPDQD5YEOF3GIF7T44U4JAL3",
   "backstopTokenAddress": "CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM",
   "usdcAddress": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
   "blndAddress": "CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY",
   "keypair": "S...",
-  "poolConfigs": [
-    {
-      "name": "pool name",
-      "poolAddress": "C...",
-      "minPrimaryCollateral": "10000000000",
-      "primaryAsset": "C..."
-    }
-  ],
+  "pools": ["C....", "C...."],
   "fillers": [
     {
       "name": "example-liquidator",
       "keypair": "S...",
       "defaultProfitPct": 0.1,
-      "minHealthFactor": 1.5,
-      "forceFill": true,
+      "supportedPools": [
+        {
+          "poolAddress": "CDVQVKOY2YSXS2IC7KN6MNASSHPAO7UN2UR2ON4OI2SKMFJNVAMDX6DP",
+          "primaryAsset": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+          "minPrimaryCollateral": "1000000000000",
+          "minHealthFactor": 1.5,
+          "forceFill": true
+        }
+      ],
       "supportedBid": [
         "CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM",
         "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
