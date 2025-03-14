@@ -1,4 +1,4 @@
-import { PoolContractV1, PoolContractV2, Version } from '@blend-capital/blend-sdk';
+import { PoolContractV1 } from '@blend-capital/blend-sdk';
 import { rpc } from '@stellar/stellar-sdk';
 import { calculateAuctionFill } from './auction.js';
 import { getFillerAvailableBalances, managePositions } from './filler.js';

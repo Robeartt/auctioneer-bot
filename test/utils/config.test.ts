@@ -27,7 +27,6 @@ describe('validateAppConfig', () => {
       pools: [],
       fillers: [],
       priceSources: [],
-      version: 'V1',
       slackWebhook: 123, // Invalid type
     };
     expect(validateAppConfig(invalidConfig)).toBe(false);
