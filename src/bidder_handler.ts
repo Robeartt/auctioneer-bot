@@ -58,7 +58,7 @@ export class BidderHandler {
                 );
                 if (auction === undefined) {
                   logger.info(
-                    `Auction not found. Assuming auction was deleted or filled. Deleting auction: ${auctionEntry.user_id}, ${auctionEntry.auction_type}`
+                    `Auction not found. Assuming auction was deleted or filled. Deleting auction: ${stringify(auctionEntry)}`
                   );
                   this.db.deleteAuctionEntry(
                     auctionEntry.pool_id,

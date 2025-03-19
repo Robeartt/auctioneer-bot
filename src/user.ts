@@ -51,13 +51,13 @@ export function updateUser(
     };
     db.setUserEntry(new_entry);
     logger.info(
-      `Updated user entry for ${user.userId} at ledger ${ledger} with health factor: ${new_entry.health_factor}.`
+      `Updated user entry for user: ${user.userId} in pool: ${pool.id} at ledger ${ledger} with health factor: ${new_entry.health_factor}.`
     );
   } else {
     // user does not have liabilities, remove db entry if it exists
     db.deleteUserEntry(pool.id, user.userId);
     logger.info(
-      `Deleted user entry for ${user.userId} at ledger ${ledger}, no liabilities remaining.`
+      `Deleted user entry for user: ${user.userId} in pool: ${pool.id} at ledger ${ledger}, no liabilities remaining.`
     );
   }
 }

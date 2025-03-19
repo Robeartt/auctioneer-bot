@@ -63,7 +63,9 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
     userLiquidation: UserLiquidation
   ): Promise<boolean> {
     try {
-      logger.info(`Creating liquidation for user: ${userLiquidation.user}`);
+      logger.info(
+        `Creating liquidation for user: ${userLiquidation.user} in pool: ${userLiquidation.poolId}`
+      );
 
       const pool = new PoolContractV1(userLiquidation.poolId);
       const op = pool.newLiquidationAuction({
@@ -78,7 +80,9 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
           AuctionType.Liquidation
         )) !== undefined;
       if (auctionExists) {
-        logger.info(`User liquidation auction already exists for user: ${userLiquidation.user}`);
+        logger.info(
+          `User liquidation auction already exists for user: ${userLiquidation.user} in pool: ${userLiquidation.poolId}`
+        );
         return true;
       }
       await sorobanHelper.submitTransaction(op, APP_CONFIG.keypair);
@@ -123,7 +127,9 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
     badDebtTransfer: BadDebtTransfer
   ): Promise<boolean> {
     try {
-      logger.info(`Transferring bad debt to backstop for user: ${badDebtTransfer.user}`);
+      logger.info(
+        `Transferring bad debt to backstop for user: ${badDebtTransfer.user} in pool: ${badDebtTransfer.poolId}`
+      );
       const pool = new PoolContractV1(badDebtTransfer.poolId);
       const op = pool.badDebt(badDebtTransfer.user);
       await sorobanHelper.submitTransaction(op, APP_CONFIG.keypair);
@@ -152,7 +158,7 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
     submission: BadDebtAuction
   ): Promise<boolean> {
     try {
-      logger.info(`Creating bad debt auction`);
+      logger.info(`Creating bad debt auction for pool: ${submission.poolId}`);
 
       const pool = new PoolContractV1(submission.poolId);
       const op = pool.newBadDebtAuction();
@@ -164,7 +170,7 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
           AuctionType.BadDebt
         )) !== undefined;
       if (auctionExists) {
-        logger.info(`Bad debt auction already exists`);
+        logger.info(`Bad debt auction already exists for pool: ${submission.poolId}`);
         return true;
       }
       await sorobanHelper.submitTransaction(op, APP_CONFIG.keypair);

@@ -121,7 +121,7 @@ export function managePositions(
   let effectiveCollateral = positionsEst.totalEffectiveCollateral;
   const fillerConfig = filler.supportedPools.find((config) => config.poolAddress === pool.id);
   if (fillerConfig === undefined) {
-    logger.error(`Unable to find filler config for pool: ${pool.id}`);
+    logger.error(`${filler.name} filler unable to find filler config for pool: ${pool.id}`);
     return requests;
   }
   const hasLeftoverLiabilities: number[] = [];
