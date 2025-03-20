@@ -185,7 +185,7 @@ export async function calculateBlockFillAndPercent(
       // attempt to repay any liabilities the filler has took on from the bids
       for (const [assetId, amount] of loopScaledAuction.data.bid) {
         const balance = loopFillerBalances.get(assetId) ?? 0n;
-        if (balance > 0n) {
+        if (balance > 0n && amount > 0n) {
           const reserve = pool.reserves.get(assetId);
           const oraclePrice = poolOracle.getPriceFloat(assetId);
           if (reserve !== undefined && oraclePrice !== undefined) {

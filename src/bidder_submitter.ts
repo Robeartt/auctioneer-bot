@@ -165,7 +165,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
     } catch (e: any) {
       const logMessage =
         `Error submitting fill for auction\n` +
-        `Type: ${auctionBid.auctionEntry.auction_type}\n` +
+        `Type: ${AuctionType[auctionBid.auctionEntry.auction_type]}\n` +
         `Pool: ${auctionBid.auctionEntry.pool_id}\n` +
         `User: ${auctionBid.auctionEntry.user_id}\n` +
         `Filler: ${auctionBid.filler.name}\n` +
