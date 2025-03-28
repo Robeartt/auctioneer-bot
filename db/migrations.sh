@@ -93,8 +93,6 @@ if [ "$CURRENT_VERSION" -lt 2 ]; then
             UPDATE users SET pool_id = '$PREV_POOL_ID' WHERE pool_id = 'default_pool';
             UPDATE auctions SET pool_id = '$PREV_POOL_ID' WHERE pool_id = 'default_pool';
             UPDATE filled_auctions SET pool_id = '$PREV_POOL_ID' WHERE pool_id = 'default_pool';
-            UPDATE db_version SET description = 'Add pool_id column to users, auctions, and filled_auctions tables with ID: $PREV_POOL_ID' 
-            WHERE version = 2;
         " 
 
         # Check if migration was successful

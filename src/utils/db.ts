@@ -294,9 +294,9 @@ export class AuctioneerDatabase {
     try {
       let entries: any[] = this.db
         .prepare(
-          'SELECT * FROM users WHERE json_extract(liabilities, ?) IS NOT NULL AND pool_id = ?'
+          'SELECT * FROM users WHERE pool_id = ? AND json_extract(liabilities, ?) IS NOT NULL '
         )
-        .all(`$.value.${assetId}`, poolId);
+        .all(poolId, `$.value.${assetId}`);
       return entries.map((entry) => {
         return {
           pool_id: entry.pool_id,
@@ -323,9 +323,9 @@ export class AuctioneerDatabase {
     try {
       let entries: any[] = this.db
         .prepare(
-          'SELECT * FROM users WHERE json_extract(collateral, ?) IS NOT NULL AND pool_id = ?'
+          'SELECT * FROM users WHERE pool_id = ? AND json_extract(collateral, ?) IS NOT NULL '
         )
-        .all(`$.value.${assetId}`, poolId);
+        .all(poolId, `$.value.${assetId}`);
       return entries.map((entry) => {
         return {
           pool_id: entry.pool_id,

@@ -30,10 +30,10 @@ export class OracleHistory {
     let down: string[] = [];
 
     for (let [assetId, priceData] of current.prices) {
-      let priceHistory = this.priceHistory.get(current.oracleId + assetId);
+      let priceHistory = this.getPrice(current.oracleId, assetId);
 
       if (priceHistory === undefined) {
-        this.priceHistory.set(current.oracleId + assetId, priceData);
+        this.setPrice(current.oracleId, assetId, priceData);
         continue;
       }
 
@@ -48,15 +48,23 @@ export class OracleHistory {
           down.push(assetId);
         }
         // set the new price as the last viewed price
-        this.priceHistory.set(current.oracleId + assetId, priceData);
+        this.setPrice(current.oracleId, assetId, priceData);
       }
       // TODO: Do we want this? Or would it be better to just wait for a significant change?
       else if (priceData.timestamp > priceHistory.timestamp + 24 * 60 * 60) {
         // update the last viewed price after a day has passed without a significant change
-        this.priceHistory.set(current.oracleId + assetId, priceData);
+        this.setPrice(current.oracleId, assetId, priceData);
       }
     }
 
     return { up, down };
+  }
+
+  private getPrice(oracleId: string, assetId: string): PriceData | undefined {
+    return this.priceHistory.get(oracleId + assetId);
+  }
+
+  private setPrice(oracleId: string, assetId: string, priceData: PriceData): void {
+    this.priceHistory.set(oracleId + assetId, priceData);
   }
 }

@@ -40,10 +40,10 @@ export interface ErrorTimeout {
 
 export class SorobanHelper {
   network: Network;
-  private pool_cache: Map<string, Pool | ErrorTimeout>;
+  private pool_cache: Map<string, Pool | Error>;
   // cache for pool users keyed by 'poolId + userId'
-  private user_cache: Map<string, PoolUser | ErrorTimeout>;
-  private oracle_cache: Map<string, PoolOracle | ErrorTimeout>;
+  private user_cache: Map<string, PoolUser | Error>;
+  private oracle_cache: Map<string, PoolOracle | Error>;
 
   constructor() {
     this.network = {
@@ -73,14 +73,14 @@ export class SorobanHelper {
     let cachedPool = this.pool_cache.get(poolId);
     try {
       if (cachedPool) {
-        if ('timeout' in cachedPool && cachedPool.timeout > Date.now()) throw cachedPool.error;
-        else if (cachedPool instanceof Pool) return cachedPool;
+        if (cachedPool instanceof Pool) return cachedPool;
+        else throw cachedPool;
       }
       let pool: Pool = await PoolV1.load(this.network, poolId);
       this.pool_cache.set(poolId, pool);
       return pool;
-    } catch (e) {
-      this.pool_cache.set(poolId, { timeout: Date.now() + 5000, error: e });
+    } catch (e: any) {
+      this.pool_cache.set(poolId, e);
       logger.error(`Error loading ${poolId} pool:  ${e}`);
       throw e;
     }
@@ -90,16 +90,16 @@ export class SorobanHelper {
     let cachedUser = this.user_cache.get(poolId + userId);
     try {
       if (cachedUser) {
-        if ('timeout' in cachedUser && cachedUser.timeout > Date.now()) throw cachedUser.error;
-        else if (cachedUser instanceof PoolUser) return cachedUser;
+        if (cachedUser instanceof PoolUser) return cachedUser;
+        else throw cachedUser;
       }
       const pool = await this.loadPool(poolId);
       const user = await pool.loadUser(userId);
 
       this.user_cache.set(poolId + userId, user);
       return user;
-    } catch (e) {
-      this.user_cache.set(poolId + userId, { timeout: Date.now() + 5000, error: e });
+    } catch (e: any) {
+      this.user_cache.set(poolId + userId, e);
       logger.error(`Error loading user: ${userId} in pool: ${poolId} Error: ${e}`);
       throw e;
     }
@@ -109,16 +109,15 @@ export class SorobanHelper {
     let cachedOracle = this.oracle_cache.get(poolId);
     try {
       if (cachedOracle) {
-        if ('timeout' in cachedOracle && cachedOracle.timeout > Date.now())
-          throw cachedOracle.error;
-        else if (cachedOracle instanceof PoolOracle) return cachedOracle;
+        if (cachedOracle instanceof PoolOracle) return cachedOracle;
+        else throw cachedOracle;
       }
       const pool = await this.loadPool(poolId);
       const oracle = await pool.loadOracle();
       this.oracle_cache.set(poolId, oracle);
       return oracle;
-    } catch (e) {
-      this.oracle_cache.set(poolId, { timeout: Date.now() + 5000, error: e });
+    } catch (e: any) {
+      this.oracle_cache.set(poolId, e);
       logger.error(`Error loading pool oracle for pool: ${poolId} Error: ${e}`);
       throw e;
     }

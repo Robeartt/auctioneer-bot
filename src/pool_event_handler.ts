@@ -1,4 +1,4 @@
-import { PoolEventType } from '@blend-capital/blend-sdk';
+import { PoolEventType, PoolFillAuctionV1Event } from '@blend-capital/blend-sdk';
 import { ChildProcess } from 'child_process';
 import { EventType, PoolEventEvent } from './events.js';
 import { canFillerBid } from './filler.js';
@@ -163,8 +163,7 @@ export class PoolEventHandler {
         break;
       }
       case PoolEventType.FillAuction: {
-        const fillerAddress =
-          'from' in poolEvent.event ? poolEvent.event.from : poolEvent.event.filler;
+        const fillerAddress = (poolEvent.event as PoolFillAuctionV1Event).from;
         const logMessage =
           `Auction Fill Event\n` +
           `Type ${AuctionType[poolEvent.event.auctionType]}\n` +

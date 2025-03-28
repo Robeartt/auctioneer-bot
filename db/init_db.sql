@@ -64,13 +64,5 @@ CREATE INDEX IF NOT EXISTS idx_filler ON filled_auctions(filler);
 INSERT INTO db_version (version, description, applied_at)
 SELECT 2, 'init db', unixepoch()
 WHERE NOT EXISTS (
-    SELECT 1 FROM status LIMIT 1
-) AND NOT EXISTS (
-    SELECT 1 FROM users LIMIT 1
-) AND NOT EXISTS (
-    SELECT 1 FROM prices LIMIT 1
-) AND NOT EXISTS (
-    SELECT 1 FROM auctions LIMIT 1
-) AND NOT EXISTS (
-    SELECT 1 FROM filled_auctions LIMIT 1
+    SELECT 1 FROM db_version LIMIT 1
 );

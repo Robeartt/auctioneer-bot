@@ -77,6 +77,7 @@ export class BidderHandler {
                 );
                 const logMessage =
                   `Auction Calculation\n` +
+                  `Filler: ${filler.name}\n` +
                   `Type: ${AuctionType[auction.type]}\n` +
                   `Pool: ${auctionEntry.pool_id}\n` +
                   `User: ${auction.user}\n` +
