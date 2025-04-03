@@ -1,4 +1,4 @@
-import { Auction, ContractError, ContractErrorType } from '@blend-capital/blend-sdk';
+import { Auction, ContractError, ContractErrorType, FixedMath } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import { AppConfig } from '../src/utils/config';
 import { AuctionType } from '../src/utils/db';
@@ -6,6 +6,7 @@ import { logger } from '../src/utils/logger';
 import { sendSlackNotification } from '../src/utils/slack_notifier';
 import { SorobanHelper } from '../src/utils/soroban_helper';
 import { WorkSubmission, WorkSubmissionType, WorkSubmitter } from '../src/work_submitter';
+import { mockPool, USDC } from './helpers/mocks';
 
 // Mock dependencies
 jest.mock('../src/utils/db');
@@ -20,9 +21,7 @@ jest.mock('../src/utils/logger.js', () => ({
   },
 }));
 jest.mock('../src/utils/config.js', () => {
-  let config: AppConfig = {
-    poolAddress: 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC',
-  } as AppConfig;
+  let config: AppConfig = {} as AppConfig;
   return {
     APP_CONFIG: config,
   };
@@ -48,6 +47,7 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolId: mockPool.id,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
     };
@@ -55,6 +55,7 @@ describe('WorkSubmitter', () => {
     const result = await workSubmitter.submit(submission);
     expect(result).toBe(true);
     expect(mockedSorobanHelper.loadAuction).toHaveBeenCalledWith(
+      mockPool.id,
       submission.user,
       AuctionType.Liquidation
     );
@@ -73,6 +74,7 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolId: mockPool.id,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
     };
@@ -92,8 +94,11 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolId: mockPool.id,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
+      lot: [],
+      bid: [],
     };
 
     const result = await workSubmitter.submit(submission);
@@ -111,6 +116,7 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolId: mockPool.id,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(100),
     };
@@ -130,6 +136,7 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolId: mockPool.id,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
     };
@@ -149,6 +156,7 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolId: mockPool.id,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(1),
     };
@@ -168,6 +176,7 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolId: mockPool.id,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
     };
@@ -187,6 +196,7 @@ describe('WorkSubmitter', () => {
 
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolId: mockPool.id,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
     };
@@ -198,13 +208,16 @@ describe('WorkSubmitter', () => {
     // 3 retries plus the final increment before dropping
     expect(submission.liquidationPercent).toBe(BigInt(54));
     expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('Dropped liquidation for user')
+      expect.stringContaining(
+        'Error creating user liquidation\n' + `Pool: ${mockPool.id}\n` + `User: ${submission.user}`
+      )
     );
   });
 
   it('should submit a bad debt transfer successfully', async () => {
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtTransfer,
+      poolId: mockPool.id,
       user: Keypair.random().publicKey(),
     };
 
@@ -220,6 +233,7 @@ describe('WorkSubmitter', () => {
 
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtAuction,
+      poolId: mockPool.id,
     };
     const result = await workSubmitter.submit(submission);
 
@@ -240,6 +254,7 @@ describe('WorkSubmitter', () => {
 
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtAuction,
+      poolId: mockPool.id,
     };
     const result = await workSubmitter.submit(submission);
 
@@ -251,36 +266,47 @@ describe('WorkSubmitter', () => {
   it('should log an error when a liquidation is dropped', () => {
     const submission = {
       type: WorkSubmissionType.LiquidateUser,
+      poolId: mockPool.id,
       user: Keypair.random().publicKey(),
       liquidationPercent: BigInt(50),
+      lot: [],
+      bid: [],
     };
     workSubmitter.onDrop(submission);
 
     expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('Dropped liquidation for user')
+      expect.stringContaining(
+        'Dropped liquidation\n' + `pool: ${mockPool.id}\n` + `user: ${submission.user}`
+      )
     );
   });
 
   it('should log an error when a bad debt transfer is dropped', () => {
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtTransfer,
+      poolId: mockPool.id,
       user: Keypair.random().publicKey(),
     };
 
     workSubmitter.onDrop(submission);
 
     expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('Dropped bad debt transfer for user')
+      expect.stringContaining(
+        'Dropped bad debt transfer\n' + `pool: ${mockPool.id}\n` + `user: ${submission.user}`
+      )
     );
   });
 
   it('should log an error when a bad debt auction is dropped', () => {
     const submission: WorkSubmission = {
       type: WorkSubmissionType.BadDebtAuction,
+      poolId: mockPool.id,
     };
 
     workSubmitter.onDrop(submission);
 
-    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('Dropped bad debt auction'));
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('Dropped bad debt auction\n' + `pool: ${mockPool.id}`)
+    );
   });
 });

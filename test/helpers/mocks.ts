@@ -1,4 +1,4 @@
-import { Pool, PoolOracle, PriceData, Reserve } from '@blend-capital/blend-sdk';
+import { PoolOracle, PoolV1, PriceData, ReserveV1 } from '@blend-capital/blend-sdk';
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -6,18 +6,18 @@ import { AuctioneerDatabase } from '../../src/utils/db.js';
 import { parse } from '../../src/utils/json.js';
 
 const mockPoolPath = path.resolve(__dirname, 'mock-pool.json');
-let pool = parse<Pool>(fs.readFileSync(mockPoolPath, 'utf8'));
+let pool = parse<PoolV1>(fs.readFileSync(mockPoolPath, 'utf8'));
 pool.reserves.forEach((reserve, assetId, map) => {
+  const reserveV1 = reserve as ReserveV1;
   map.set(
     assetId,
-    new Reserve(
+    new ReserveV1(
       pool.id,
       assetId,
-      reserve.tokenMetadata,
       reserve.config,
       reserve.data,
-      reserve.borrowEmissions,
-      reserve.supplyEmissions,
+      reserveV1.borrowEmissions,
+      reserveV1.supplyEmissions,
       reserve.borrowApr,
       reserve.supplyApr,
       reserve.latestLedger
@@ -26,7 +26,7 @@ pool.reserves.forEach((reserve, assetId, map) => {
 });
 export let mockPool = pool;
 
-export const MOCK_LEDGER = pool.config.latestLedger;
+export const MOCK_LEDGER = pool.metadata.latestLedger;
 export const MOCK_TIMESTAMP = pool.timestamp;
 
 export const XLM = 'CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA';
@@ -55,6 +55,6 @@ export let mockPoolOracle = new PoolOracle(
 
 export function inMemoryAuctioneerDb(): AuctioneerDatabase {
   let db = new Database(':memory:');
-  db.exec(fs.readFileSync(path.resolve(__dirname, '../../init_db.sql'), 'utf8'));
+  db.exec(fs.readFileSync(path.resolve(__dirname, '../../db/init_db.sql'), 'utf8'));
   return new AuctioneerDatabase(db);
 }

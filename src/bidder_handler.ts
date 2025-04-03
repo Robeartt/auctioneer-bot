@@ -52,17 +52,23 @@ export class BidderHandler {
               if (auctionEntry.fill_block === 0 || ledgersToFill <= 5 || ledgersToFill % 10 === 0) {
                 // recalculate the auction
                 const auction = await this.sorobanHelper.loadAuction(
+                  auctionEntry.pool_id,
                   auctionEntry.user_id,
                   auctionEntry.auction_type
                 );
                 if (auction === undefined) {
                   logger.info(
-                    `Auction not found. Assuming auction was deleted or filled. Deleting auction: ${auctionEntry.user_id}, ${auctionEntry.auction_type}`
+                    `Auction not found. Assuming auction was deleted or filled. Deleting auction: ${stringify(auctionEntry)}`
                   );
-                  this.db.deleteAuctionEntry(auctionEntry.user_id, auctionEntry.auction_type);
+                  this.db.deleteAuctionEntry(
+                    auctionEntry.pool_id,
+                    auctionEntry.user_id,
+                    auctionEntry.auction_type
+                  );
                   continue;
                 }
                 const fill = await calculateAuctionFill(
+                  auctionEntry.pool_id,
                   filler,
                   auction,
                   nextLedger,
@@ -71,7 +77,9 @@ export class BidderHandler {
                 );
                 const logMessage =
                   `Auction Calculation\n` +
+                  `Filler: ${filler.name}\n` +
                   `Type: ${AuctionType[auction.type]}\n` +
+                  `Pool: ${auctionEntry.pool_id}\n` +
                   `User: ${auction.user}\n` +
                   `Fill: ${stringify(fill, 2)}\n` +
                   `Ledgers To Fill In: ${fill.block - nextLedger}\n`;

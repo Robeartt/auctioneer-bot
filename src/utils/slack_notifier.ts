@@ -10,7 +10,7 @@ export async function sendSlackNotification(message: string): Promise<void> {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          text: `*Bot Name*: ${APP_CONFIG.name}\n*Pool Address*: ${APP_CONFIG.poolAddress}\n${message}`,
+          text: `*Bot Name*: ${APP_CONFIG.name}\n${message}`,
         }),
       });
       if (!response.ok) {
@@ -18,7 +18,7 @@ export async function sendSlackNotification(message: string): Promise<void> {
       }
     } else {
       console.log(
-        `Bot Name: ${APP_CONFIG.name}\nTimestamp: ${new Date().toISOString()}\nPool Address: ${APP_CONFIG.poolAddress}\n${message}`
+        `Bot Name: ${APP_CONFIG.name}\nTimestamp: ${new Date().toISOString()}\n${message}`
       );
     }
   } catch (e) {

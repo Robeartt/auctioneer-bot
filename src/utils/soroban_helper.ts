@@ -9,6 +9,7 @@ import {
   PoolContract,
   PoolOracle,
   PoolUser,
+  PoolV1,
   PositionsEstimate,
 } from '@blend-capital/blend-sdk';
 import {
@@ -32,11 +33,17 @@ export interface PoolUserEst {
   user: PoolUser;
 }
 
+export interface ErrorTimeout {
+  timeout: number;
+  error: any;
+}
+
 export class SorobanHelper {
   network: Network;
-  private pool_cache: Pool | undefined;
-  private user_cache: Map<string, PoolUser> = new Map();
-  private oracle_cache: PoolOracle | undefined;
+  private pool_cache: Map<string, Pool>;
+  // cache for pool users keyed by 'poolId + userId'
+  private user_cache: Map<string, PoolUser>;
+  private oracle_cache: Map<string, PoolOracle>;
 
   constructor() {
     this.network = {
@@ -46,7 +53,9 @@ export class SorobanHelper {
         allowHttp: true,
       },
     };
-    this.pool_cache = undefined;
+    this.pool_cache = new Map();
+    this.user_cache = new Map();
+    this.oracle_cache = new Map();
   }
 
   async loadLatestLedger(): Promise<number> {
@@ -60,57 +69,76 @@ export class SorobanHelper {
     }
   }
 
-  async loadPool(): Promise<Pool> {
-    if (this.pool_cache) {
-      return this.pool_cache;
-    } else {
-      this.pool_cache = await Pool.load(this.network, APP_CONFIG.poolAddress);
-      return this.pool_cache;
-    }
-  }
-
-  async loadUser(address: string): Promise<PoolUser> {
-    if (this.user_cache.has(address)) {
-      return this.user_cache.get(address) as PoolUser;
-    } else {
-      const pool = await this.loadPool();
-      const user = await pool.loadUser(address);
-      this.user_cache.set(address, user);
-      return user;
-    }
-  }
-
-  async loadPoolOracle(): Promise<PoolOracle> {
+  async loadPool(poolId: string): Promise<Pool> {
+    let cachedPool = this.pool_cache.get(poolId);
     try {
-      if (this.oracle_cache) {
-        return this.oracle_cache;
+      if (cachedPool) {
+        return cachedPool;
       }
-      const pool = await this.loadPool();
-      const oracle = await pool.loadOracle();
-      this.oracle_cache = oracle;
-      return oracle;
-    } catch (e) {
-      logger.error(`Error loading pool oracle: ${e}`);
+      let pool: Pool = await PoolV1.load(this.network, poolId);
+      this.pool_cache.set(poolId, pool);
+      return pool;
+    } catch (e: any) {
+      logger.error(`Error loading ${poolId} pool:  ${e}`);
       throw e;
     }
   }
 
-  async loadUserPositionEstimate(address: string): Promise<PoolUserEst> {
+  async loadUser(poolId: string, userId: string): Promise<PoolUser> {
+    let cachedUser = this.user_cache.get(poolId + userId);
     try {
-      const pool = await this.loadPool();
-      const user = await pool.loadUser(address);
-      const poolOracle = await pool.loadOracle();
+      if (cachedUser) {
+        return cachedUser;
+      }
+      const pool = await this.loadPool(poolId);
+      const user = await pool.loadUser(userId);
+
+      this.user_cache.set(poolId + userId, user);
+      return user;
+    } catch (e: any) {
+      logger.error(`Error loading user: ${userId} in pool: ${poolId} Error: ${e}`);
+      throw e;
+    }
+  }
+
+  async loadPoolOracle(poolId: string): Promise<PoolOracle> {
+    let cachedOracle = this.oracle_cache.get(poolId);
+    try {
+      if (cachedOracle) {
+        return cachedOracle;
+      }
+      const pool = await this.loadPool(poolId);
+      const oracle = await pool.loadOracle();
+      this.oracle_cache.set(poolId, oracle);
+      return oracle;
+    } catch (e: any) {
+      logger.error(`Error loading pool oracle for pool: ${poolId} Error: ${e}`);
+      throw e;
+    }
+  }
+
+  async loadUserPositionEstimate(poolId: string, userId: string): Promise<PoolUserEst> {
+    try {
+      const pool = await this.loadPool(poolId);
+      const user = await this.loadUser(poolId, userId);
+      const poolOracle = await this.loadPoolOracle(poolId);
       return { estimate: PositionsEstimate.build(pool, poolOracle, user.positions), user };
     } catch (e) {
-      logger.error(`Error loading user position estimate: ${e}`);
+      logger.error(
+        `Error loading user position estimate for user: ${userId} in pool: ${poolId} Error: ${e}`
+      );
       throw e;
     }
   }
 
-  async loadAuction(userId: string, auctionType: number): Promise<Auction | undefined> {
+  async loadAuction(
+    poolId: string,
+    userId: string,
+    auctionType: number
+  ): Promise<Auction | undefined> {
     try {
       const stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
-      const ledgerKey = AuctionData.ledgerKey(APP_CONFIG.poolAddress, {
+      const ledgerKey = AuctionData.ledgerKey(poolId, {
         auct_type: auctionType,
         user: userId,
       });
@@ -123,7 +151,7 @@ export class SorobanHelper {
       );
       return new Auction(userId, auctionType, auctionData);
     } catch (e) {
-      logger.error(`Error loading auction: ${e}`);
+      logger.error(`Error loading auction for user: ${userId} in pool: ${poolId} Error: ${e}`);
       throw e;
     }
   }
@@ -167,7 +195,7 @@ export class SorobanHelper {
     }
   }
 
-  async simLPTokenToUSDC(amount: bigint): Promise<bigint | undefined> {
+  async simLPTokenToUSDC(backstopAddress: string, amount: bigint): Promise<bigint | undefined> {
     try {
       let comet = new Contract(APP_CONFIG.backstopTokenAddress);
       let op = comet.call(
@@ -176,7 +204,7 @@ export class SorobanHelper {
           nativeToScVal(APP_CONFIG.usdcAddress, { type: 'address' }),
           nativeToScVal(amount, { type: 'i128' }),
           nativeToScVal(0, { type: 'i128' }),
-          nativeToScVal(APP_CONFIG.backstopAddress, { type: 'address' }),
+          nativeToScVal(backstopAddress, { type: 'address' }),
         ]
       );
       let account = new Account(Keypair.random().publicKey(), '123');
@@ -240,7 +268,9 @@ export class SorobanHelper {
       .addOperation(xdr.Operation.fromXDR(operation, 'base64'))
       .build();
 
-    logger.info(`Attempting to simulate and submit transaction ${tx.hash().toString("hex")}: ${tx.toXDR()}`);
+    logger.info(
+      `Attempting to simulate and submit transaction ${tx.hash().toString('hex')}: ${tx.toXDR()}`
+    );
     let simResult = await stellarRpc.simulateTransaction(tx);
 
     if (rpc.Api.isSimulationRestore(simResult)) {
@@ -281,7 +311,7 @@ export class SorobanHelper {
   private async sendTransaction(
     transaction: Transaction
   ): Promise<rpc.Api.GetSuccessfulTransactionResponse & { txHash: string }> {
-    logger.info(`Submitting transaction: ${transaction.hash().toString("hex")}`);
+    logger.info(`Submitting transaction: ${transaction.hash().toString('hex')}`);
     let submitStartTime = Date.now();
     const stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
     let txResponse = await stellarRpc.sendTransaction(transaction);

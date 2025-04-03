@@ -6,13 +6,22 @@ CREATE TABLE IF NOT EXISTS status (
     latest_ledger INTEGER NOT NULL
 );
 
+-- Table to store the version of the database
+CREATE TABLE IF NOT EXISTS db_version (
+    version INTEGER PRIMARY KEY NOT NULL,
+    description TEXT NOT NULL,
+    applied_at INTEGER NOT NULL
+);
+
 -- Table to store the user's that have positions in the pool
 CREATE TABLE IF NOT EXISTS users (
-    user_id TEXT PRIMARY KEY NOT NULL,
+    pool_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
     health_factor REAL NOT NULL,
     collateral JSON NOT NULL,
     liabilities JSON,
-    updated INTEGER NOT NULL
+    updated INTEGER NOT NULL,
+    PRIMARY KEY (pool_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_health_factor ON users(health_factor);
 
@@ -25,18 +34,20 @@ CREATE TABLE IF NOT EXISTS prices (
 
 -- Table to store ongoing auctions
 CREATE TABLE IF NOT EXISTS auctions (
+    pool_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
     auction_type INTEGER NOT NULL,
     filler TEXT NOT NULL,
     start_block INTEGER NOT NULL,
     fill_block INTEGER NOT NULL,
     updated INTEGER NOT NULL,
-    PRIMARY KEY (user_id, auction_type)
+    PRIMARY KEY (pool_id, user_id, auction_type)
 );
 
 -- Table to store filled auctions
 CREATE TABLE IF NOT EXISTS filled_auctions (
     tx_hash TEXT PRIMARY KEY,
+    pool_id TEXT NOT NULL,
     filler TEXT NOT NULL,
     user_id TEXT NOT NULL,
     auction_type INTEGER NOT NULL,
@@ -49,3 +60,4 @@ CREATE TABLE IF NOT EXISTS filled_auctions (
     timestamp INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_filler ON filled_auctions(filler);
+

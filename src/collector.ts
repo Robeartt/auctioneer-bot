@@ -15,6 +15,8 @@ import { AuctioneerDatabase } from './utils/db.js';
 import { stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
 import { sendEvent } from './utils/messages.js';
+import { Api } from '@stellar/stellar-sdk/rpc';
+import { APP_CONFIG } from './utils/config.js';
 
 let startup_ledger = 0;
 
@@ -23,7 +25,6 @@ export async function runCollector(
   bidder: ChildProcess,
   db: AuctioneerDatabase,
   stellarRpc: rpc.Server,
-  poolAddress: string,
   poolEventHandler: PoolEventHandler
 ) {
   const timer = Date.now();
@@ -34,13 +35,6 @@ export async function runCollector(
   const latestLedger = (await stellarRpc.getLatestLedger()).sequence;
   if (latestLedger > statusEntry.latest_ledger) {
     logger.info(`Processing ledger ${latestLedger}`);
-    // new ledger detected
-    const ledger_event: LedgerEvent = {
-      type: EventType.LEDGER,
-      timestamp: Date.now(),
-      ledger: latestLedger,
-    };
-    sendEvent(bidder, ledger_event);
 
     // determine ledgers since bot was started to send long running work events
     // this staggers the events from different bots running on the same pool
@@ -49,7 +43,14 @@ export async function runCollector(
     }
     const ledgersProcessed = latestLedger - startup_ledger;
 
-    // send long running work events to worker
+    // new ledger detected
+    const ledger_event: LedgerEvent = {
+      type: EventType.LEDGER,
+      timestamp: Date.now(),
+      ledger: latestLedger,
+    };
+    sendEvent(bidder, ledger_event);
+
     if (ledgersProcessed % 10 === 0) {
       // approx every minute
       const event: PriceUpdateEvent = {
@@ -58,6 +59,8 @@ export async function runCollector(
       };
       sendEvent(worker, event);
     }
+
+    // send long running work events to worker
     if (ledgersProcessed % 60 === 0) {
       // approx every 5m
       // send an oracle scan event
@@ -67,6 +70,7 @@ export async function runCollector(
       };
       sendEvent(worker, event);
     }
+
     if (ledgersProcessed % 1203 === 0) {
       // approx every 2hr
       // send a user update event to update any users that have not been updated in ~2 weeks
@@ -77,6 +81,7 @@ export async function runCollector(
       };
       sendEvent(worker, event);
     }
+
     if (ledgersProcessed % 1207 === 0) {
       // approx every 2hr
       // send a liq scan event
@@ -94,15 +99,11 @@ export async function runCollector(
     // if we are too far behind, start from 17270 ledgers ago (default max ledger history is 17280)
     start_ledger = Math.max(start_ledger, latestLedger - 17270);
     let events: rpc.Api.RawGetEventsResponse;
+    const filters = createFilter(APP_CONFIG.pools);
     try {
       events = await stellarRpc._getEvents({
         startLedger: start_ledger,
-        filters: [
-          {
-            type: 'contract',
-            contractIds: [poolAddress],
-          },
-        ],
+        filters: filters,
         limit: 100,
       });
     } catch (e: any) {
@@ -114,12 +115,7 @@ export async function runCollector(
         );
         events = await stellarRpc._getEvents({
           startLedger: latestLedger,
-          filters: [
-            {
-              type: 'contract',
-              contractIds: [poolAddress],
-            },
-          ],
+          filters: filters,
           limit: 100,
         });
       } else {
@@ -144,12 +140,7 @@ export async function runCollector(
       cursor = events.events[events.events.length - 1].pagingToken;
       events = await stellarRpc._getEvents({
         cursor: cursor,
-        filters: [
-          {
-            type: 'contract',
-            contractIds: [poolAddress],
-          },
-        ],
+        filters: filters,
         limit: 100,
       });
     }
@@ -159,4 +150,15 @@ export async function runCollector(
     db.setStatusEntry(statusEntry);
     logger.info(`Processed ledger ${latestLedger} in ${Date.now() - timer}ms`);
   }
+}
+
+export function createFilter(pools: string[]) {
+  let filter: Api.EventFilter[] = [];
+  for (let i = 0; i < pools.length; i += 5) {
+    filter.push({
+      type: 'contract',
+      contractIds: pools.slice(i, i + 5),
+    });
+  }
+  return filter;
 }

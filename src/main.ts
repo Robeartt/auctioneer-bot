@@ -1,7 +1,13 @@
 import { rpc } from '@stellar/stellar-sdk';
 import { fork } from 'child_process';
 import { runCollector } from './collector.js';
-import { EventType, OracleScanEvent, PriceUpdateEvent, UserRefreshEvent } from './events.js';
+import {
+  EventType,
+  OracleScanEvent,
+  PriceUpdateEvent,
+  UserRefreshEvent,
+  ValidatePoolsEvent,
+} from './events.js';
 import { PoolEventHandler } from './pool_event_handler.js';
 import { APP_CONFIG } from './utils/config.js';
 import { AuctioneerDatabase } from './utils/db.js';
@@ -74,12 +80,21 @@ async function main() {
 
   console.log('Auctioneer started successfully.');
 
+  // validate pool configs on startup
+  const validatePoolsEvent: ValidatePoolsEvent = {
+    type: EventType.VALIDATE_POOLS,
+    timestamp: Date.now(),
+    pools: APP_CONFIG.pools,
+  };
+  sendEvent(worker, validatePoolsEvent);
+
   // update price on startup
-  const priveEvent: PriceUpdateEvent = {
+  const priceEvent: PriceUpdateEvent = {
     type: EventType.PRICE_UPDATE,
     timestamp: Date.now(),
   };
-  sendEvent(worker, priveEvent);
+  sendEvent(worker, priceEvent);
+
   // update price on startup
   const oracleEvent: OracleScanEvent = {
     type: EventType.ORACLE_SCAN,
@@ -98,7 +113,7 @@ async function main() {
     try {
       let sorobanHelper = new SorobanHelper();
       let poolEventHandler = new PoolEventHandler(db, sorobanHelper, worker);
-      await runCollector(worker, bidder, db, stellarRpc, APP_CONFIG.poolAddress, poolEventHandler);
+      await runCollector(worker, bidder, db, stellarRpc, poolEventHandler);
     } catch (e: any) {
       logger.error(`Error in collector`, e);
     }

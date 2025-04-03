@@ -23,18 +23,21 @@ const MAX_WITHDRAW = BigInt('9223372036854775807');
  * @param auctionData - The auction data for the auction
  * @returns A boolean indicating if the filler cares about the auction.
  */
-export function canFillerBid(filler: Filler, auctionData: AuctionData): boolean {
+export function canFillerBid(filler: Filler, poolId: string, auctionData: AuctionData): boolean {
   // validate lot
+
+  if (filler.supportedPools.find((pool) => pool.poolAddress === poolId) === undefined) {
+    return false;
+  }
+
   for (const [assetId, _] of auctionData.lot) {
     if (!filler.supportedLot.some((address) => assetId === address)) {
-      logger.info("Filler doesn't support lot asset: " + assetId);
       return false;
     }
   }
   // validate bid
   for (const [assetId, _] of auctionData.bid) {
     if (!filler.supportedBid.some((address) => assetId === address)) {
-      logger.info("Filler doesn't support bid asset: " + assetId);
       return false;
     }
   }
@@ -116,11 +119,15 @@ export function managePositions(
   const positionsEst = PositionsEstimate.build(pool, poolOracle, positions);
   let effectiveLiabilities = positionsEst.totalEffectiveLiabilities;
   let effectiveCollateral = positionsEst.totalEffectiveCollateral;
-
+  const fillerConfig = filler.supportedPools.find((config) => config.poolAddress === pool.id);
+  if (fillerConfig === undefined) {
+    logger.error(`${filler.name} filler unable to find filler config for pool: ${pool.id}`);
+    return requests;
+  }
   const hasLeftoverLiabilities: number[] = [];
   // attempt to repay any liabilities the filler has
   for (const [assetIndex, amount] of positions.liabilities) {
-    const reserve = pool.reserves.get(pool.config.reserveList[assetIndex]);
+    const reserve = pool.reserves.get(pool.metadata.reserveList[assetIndex]);
     // this should never happen
     if (reserve === undefined) {
       logger.error(
@@ -154,7 +161,7 @@ export function managePositions(
   // short circuit collateral withdrawal if close to min hf
   // this avoids very small amout of dust collateral being withdrawn and
   // causing unwind events to loop
-  if (filler.minHealthFactor * 1.01 > effectiveCollateral / effectiveLiabilities) {
+  if (fillerConfig.minHealthFactor * 1.01 > effectiveCollateral / effectiveLiabilities) {
     return requests;
   }
 
@@ -167,7 +174,7 @@ export function managePositions(
   const collateralList: { reserve: Reserve; price: number; amount: bigint; size: number }[] = [];
 
   for (const [assetIndex, amount] of positions.collateral) {
-    const reserve = pool.reserves.get(pool.config.reserveList[assetIndex]);
+    const reserve = pool.reserves.get(pool.metadata.reserveList[assetIndex]);
     // this should never happen
     if (reserve === undefined) {
       logger.error(
@@ -187,7 +194,7 @@ export function managePositions(
       collateralList.push({ reserve, price, amount, size: 0 });
     }
     // hacky - set size to MAX for (3), to ensure it is withdrawn last
-    else if (reserve.assetId === filler.primaryAsset) {
+    else if (reserve.assetId === fillerConfig.primaryAsset) {
       collateralList.push({ reserve, price, amount, size: Number.MAX_SAFE_INTEGER });
     } else {
       const size = reserve.toEffectiveAssetFromBTokenFloat(amount) * price;
@@ -203,32 +210,28 @@ export function managePositions(
       // no liabilities, withdraw the full position
       withdrawAmount = MAX_WITHDRAW;
     } else {
-      if (filler.minHealthFactor * 1.005 > effectiveCollateral / effectiveLiabilities) {
+      if (fillerConfig.minHealthFactor * 1.005 > effectiveCollateral / effectiveLiabilities) {
         // stop withdrawing collateral if close to min health factor
         break;
       }
       const maxWithdraw =
-        (effectiveCollateral - effectiveLiabilities * filler.minHealthFactor) /
+        (effectiveCollateral - effectiveLiabilities * fillerConfig.minHealthFactor) /
         (reserve.getCollateralFactor() * price);
       const position = reserve.toAssetFromBTokenFloat(amount);
-      withdrawAmount =
-        maxWithdraw > position ? MAX_WITHDRAW : FixedMath.toFixed(maxWithdraw, 7);
+      withdrawAmount = maxWithdraw > position ? MAX_WITHDRAW : FixedMath.toFixed(maxWithdraw, 7);
     }
 
     // if this is not a full withdrawal, and the colleratal is not also a liability, stop
-    if (
-      !hasLeftoverLiabilities.includes(reserve.config.index) &&
-      withdrawAmount !== MAX_WITHDRAW
-    ) {
+    if (!hasLeftoverLiabilities.includes(reserve.config.index) && withdrawAmount !== MAX_WITHDRAW) {
       break;
     }
     // require the filler to keep at least the min collateral balance of their primary asset
-    if (reserve.assetId === filler.primaryAsset) {
-      const toMinPosition = reserve.toAssetFromBToken(amount) - filler.minPrimaryCollateral;
+    if (reserve.assetId === fillerConfig.primaryAsset) {
+      const toMinPosition = reserve.toAssetFromBToken(amount) - fillerConfig.minPrimaryCollateral;
       withdrawAmount = withdrawAmount > toMinPosition ? toMinPosition : withdrawAmount;
       // if withdrawAmount is less than 1% of the minPrimaryCollateral stop
       // this prevents dust withdraws from looping unwind events due to interest accrual
-      if (withdrawAmount < filler.minPrimaryCollateral / 100n) {
+      if (withdrawAmount < fillerConfig.minPrimaryCollateral / 100n) {
         break;
       }
     }

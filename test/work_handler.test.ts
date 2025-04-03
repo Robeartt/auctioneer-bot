@@ -6,6 +6,7 @@ import { AuctioneerDatabase, UserEntry } from '../src/utils/db';
 import { SorobanHelper } from '../src/utils/soroban_helper';
 import { WorkHandler } from '../src/work_handler';
 import { WorkSubmission, WorkSubmissionType, WorkSubmitter } from '../src/work_submitter';
+import { AppConfig, APP_CONFIG } from '../src/utils/config';
 
 jest.mock('../src/utils/prices');
 jest.mock('../src/liquidations');
@@ -13,7 +14,14 @@ jest.mock('../src/user');
 jest.mock('../src/utils/messages');
 jest.mock('../src/utils/logger');
 jest.mock('../src/utils/soroban_helper');
-
+jest.mock('../src/utils/config.js', () => {
+  let config: AppConfig = {
+    pools: ['pool1', 'pool2'],
+  } as AppConfig;
+  return {
+    APP_CONFIG: config,
+  };
+});
 describe('WorkHandler', () => {
   let db: jest.Mocked<AuctioneerDatabase>;
   let submissionQueue: jest.Mocked<WorkSubmitter>;
@@ -46,11 +54,14 @@ describe('WorkHandler', () => {
   });
 
   it('should handle ORACLE_SCAN event', async () => {
-    const appEvent: AppEvent = { type: EventType.ORACLE_SCAN } as OracleScanEvent;
+    const appEvent: AppEvent = {
+      type: EventType.ORACLE_SCAN,
+    } as OracleScanEvent;
     const poolOracle = new PoolOracle('', new Map(), 7, 0);
     const priceChanges = { up: ['asset1'], down: ['asset2'] };
     const usersWithLiability: UserEntry[] = [
       {
+        pool_id: 'pool1',
         user_id: 'user1',
         health_factor: 0,
         collateral: new Map([['asset2', BigInt(100)]]),
@@ -60,6 +71,7 @@ describe('WorkHandler', () => {
     ];
     const usersWithCollateral: UserEntry[] = [
       {
+        pool_id: 'pool1',
         user_id: 'user1',
         health_factor: 0,
         collateral: new Map([['asset2', BigInt(100)]]),
@@ -68,7 +80,18 @@ describe('WorkHandler', () => {
       },
     ];
     const liquidations: WorkSubmission[] = [
-      { user: 'user1', type: WorkSubmissionType.LiquidateUser, liquidationPercent: 10n },
+      {
+        poolId: APP_CONFIG.pools[0],
+        user: 'user1',
+        type: WorkSubmissionType.LiquidateUser,
+        liquidationPercent: 10n,
+      },
+      {
+        poolId: APP_CONFIG.pools[0],
+        user: 'user1',
+        type: WorkSubmissionType.LiquidateUser,
+        liquidationPercent: 10n,
+      },
     ];
     sorobanHelper.loadPoolOracle.mockResolvedValue(poolOracle);
     oracleHistory.getSignificantPriceChanges.mockReturnValue(priceChanges);
@@ -77,14 +100,16 @@ describe('WorkHandler', () => {
     (checkUsersForLiquidationsAndBadDebt as jest.Mock).mockResolvedValue(liquidations);
 
     await workHandler.processEvent(appEvent);
-
-    expect(sorobanHelper.loadPoolOracle).toHaveBeenCalled();
     expect(oracleHistory.getSignificantPriceChanges).toHaveBeenCalledWith(poolOracle);
-    expect(db.getUserEntriesWithLiability).toHaveBeenCalledWith('asset1');
-    expect(db.getUserEntriesWithCollateral).toHaveBeenCalledWith('asset2');
-    expect(checkUsersForLiquidationsAndBadDebt).toHaveBeenCalledWith(db, sorobanHelper, [
-      usersWithCollateral[0].user_id,
-    ]);
+    for (const poolId of APP_CONFIG.pools) {
+      expect(sorobanHelper.loadPoolOracle).toHaveBeenCalledWith(poolId);
+      expect(db.getUserEntriesWithLiability).toHaveBeenCalledWith(poolId, 'asset1');
+      expect(db.getUserEntriesWithCollateral).toHaveBeenCalledWith(poolId, 'asset2');
+      expect(checkUsersForLiquidationsAndBadDebt).toHaveBeenCalledWith(db, sorobanHelper, poolId, [
+        usersWithCollateral[0].user_id,
+      ]);
+    }
     expect(submissionQueue.addSubmission).toHaveBeenCalledWith(liquidations[0], 3);
+    expect(submissionQueue.addSubmission).toHaveBeenCalledWith(liquidations[1], 3);
   });
 });

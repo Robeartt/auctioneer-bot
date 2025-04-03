@@ -35,6 +35,7 @@ export interface AuctionValue {
 }
 
 export async function calculateAuctionFill(
+  poolId: string,
   filler: Filler,
   auction: Auction,
   nextLedger: number,
@@ -42,8 +43,8 @@ export async function calculateAuctionFill(
   db: AuctioneerDatabase
 ): Promise<AuctionFill> {
   try {
-    const pool = await sorobanHelper.loadPool();
-    const poolOracle = await sorobanHelper.loadPoolOracle();
+    const pool = await sorobanHelper.loadPool(poolId);
+    const poolOracle = await sorobanHelper.loadPoolOracle(poolId);
 
     const auctionValue = await calculateAuctionValue(auction, pool, poolOracle, sorobanHelper, db);
     return await calculateBlockFillAndPercent(
@@ -82,6 +83,11 @@ export async function calculateBlockFillAndPercent(
   let fillBlockDelay = 0;
   let fillPercent = 100;
   let requests: Request[] = [];
+  const fillerConfig = filler.supportedPools.find((config) => config.poolAddress === pool.id);
+  if (fillerConfig === undefined) {
+    logger.error(`Unable to find filler config for pool: ${pool.id}`);
+    throw new Error(`Unable to find filler config for pool: ${pool.id}`);
+  }
 
   // get relevant assets for the auction
   const relevant_assets = [];
@@ -89,14 +95,14 @@ export async function calculateBlockFillAndPercent(
     case AuctionType.Liquidation:
       relevant_assets.push(...Array.from(auction.data.lot.keys()));
       relevant_assets.push(...Array.from(auction.data.bid.keys()));
-      relevant_assets.push(filler.primaryAsset);
+      relevant_assets.push(fillerConfig.primaryAsset);
       break;
     case AuctionType.Interest:
       relevant_assets.push(APP_CONFIG.backstopTokenAddress);
       break;
     case AuctionType.BadDebt:
       relevant_assets.push(...Array.from(auction.data.bid.keys()));
-      relevant_assets.push(filler.primaryAsset);
+      relevant_assets.push(fillerConfig.primaryAsset);
       break;
   }
   const fillerBalances = await getFillerAvailableBalances(
@@ -119,7 +125,7 @@ export async function calculateBlockFillAndPercent(
   }
   fillBlockDelay = Math.min(Math.max(Math.ceil(fillBlockDelay), 0), 400);
   // apply force fill auction boundries to profit calculations
-  if (filler.forceFill) {
+  if (fillerConfig.forceFill) {
     fillBlockDelay = Math.min(fillBlockDelay, 350);
   }
 
@@ -148,6 +154,7 @@ export async function calculateBlockFillAndPercent(
     }
   } else if (auction.type === AuctionType.Liquidation || auction.type === AuctionType.BadDebt) {
     const { estimate: fillerPositionEstimates } = await sorobanHelper.loadUserPositionEstimate(
+      pool.id,
       filler.keypair.publicKey()
     );
     let canFillWithSafeHF = false;
@@ -156,14 +163,14 @@ export async function calculateBlockFillAndPercent(
       const loopFillerBalances = new Map(fillerBalances);
       requests = [];
       logger.info(
-        `Calculating auction fill iteration ${iterations} with delay ${fillBlockDelay} and percent ${fillPercent} and user ${auction.user}`
+        `Calculating auction fill iteration ${iterations} with delay ${fillBlockDelay} for user ${auction.user} in pool ${pool.id} with percent ${fillPercent}`
       );
       const [loopScaledAuction] = auction.scale(auction.data.block + fillBlockDelay, fillPercent);
       iterations++;
       // inflate minHealthFactor slightly, to allow for the unwind logic to unwind looped positions safely
       const additionalLiabilities = effectiveLiabilities * bidScalar * (fillPercent / 100);
       const additionalCollateral = effectiveCollateral * lotScalar * (fillPercent / 100);
-      const safeHealthFactor = filler.minHealthFactor * 1.1;
+      const safeHealthFactor = fillerConfig.minHealthFactor * 1.1;
       let limitToHF =
         (fillerPositionEstimates.totalEffectiveCollateral + additionalCollateral) /
           safeHealthFactor -
@@ -178,7 +185,7 @@ export async function calculateBlockFillAndPercent(
       // attempt to repay any liabilities the filler has took on from the bids
       for (const [assetId, amount] of loopScaledAuction.data.bid) {
         const balance = loopFillerBalances.get(assetId) ?? 0n;
-        if (balance > 0n) {
+        if (balance > 0n && amount > 0n) {
           const reserve = pool.reserves.get(assetId);
           const oraclePrice = poolOracle.getPriceFloat(assetId);
           if (reserve !== undefined && oraclePrice !== undefined) {
@@ -217,9 +224,9 @@ export async function calculateBlockFillAndPercent(
 
       if (limitToHF < 0) {
         // if we still are under the health factor, we need to try and add more of the fillers primary asset as collateral
-        const primaryBalance = loopFillerBalances.get(filler.primaryAsset) ?? 0n;
-        const primaryReserve = pool.reserves.get(filler.primaryAsset);
-        const primaryOraclePrice = poolOracle.getPriceFloat(filler.primaryAsset);
+        const primaryBalance = loopFillerBalances.get(fillerConfig.primaryAsset) ?? 0n;
+        const primaryReserve = pool.reserves.get(fillerConfig.primaryAsset);
+        const primaryOraclePrice = poolOracle.getPriceFloat(fillerConfig.primaryAsset);
         if (
           primaryReserve !== undefined &&
           primaryOraclePrice !== undefined &&
@@ -237,7 +244,7 @@ export async function calculateBlockFillAndPercent(
           collateralAdded += collateral;
           requests.push({
             request_type: RequestType.SupplyCollateral,
-            address: filler.primaryAsset,
+            address: fillerConfig.primaryAsset,
             amount: FixedMath.toFixed(primaryDeposit, primaryReserve.config.decimals),
           });
         }
@@ -299,7 +306,7 @@ export async function calculateBlockFillAndPercent(
     }
   }
 
-  let requestType: RequestType;
+  let requestType: RequestType = RequestType.FillUserLiquidationAuction;
   switch (scaledAuction.type) {
     case AuctionType.Liquidation:
       requestType = RequestType.FillUserLiquidationAuction;
@@ -420,7 +427,7 @@ export async function valueBackstopTokenInUSDC(
   amount: bigint
 ): Promise<number> {
   // attempt to value via a single sided withdraw to USDC
-  const lpTokenValue = await sorobanHelper.simLPTokenToUSDC(amount);
+  const lpTokenValue = await sorobanHelper.simLPTokenToUSDC(APP_CONFIG.backstopAddress, amount);
   if (lpTokenValue !== undefined) {
     return FixedMath.toFloat(lpTokenValue, 7);
   } else {

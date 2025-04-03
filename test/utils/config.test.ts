@@ -4,6 +4,7 @@ import {
   validateAppConfig,
   validateAuctionProfit,
   validateFiller,
+  validatePoolFillerConfig,
   validatePriceSource,
 } from '../../src/utils/config';
 
@@ -18,12 +19,12 @@ describe('validateAppConfig', () => {
       name: 'App',
       rpcURL: 'http://localhost',
       networkPassphrase: 'Test',
-      poolAddress: 'pool',
       backstopAddress: 'backstop',
       backstopTokenAddress: 'token',
       usdcAddress: 'usdc',
       blndAddress: 'blnd',
       keypair: 'secret',
+      pools: [],
       fillers: [],
       priceSources: [],
       slackWebhook: 123, // Invalid type
@@ -36,21 +37,26 @@ describe('validateAppConfig', () => {
       name: 'App',
       rpcURL: 'http://localhost',
       networkPassphrase: 'Test',
-      poolAddress: 'pool',
       backstopAddress: 'backstop',
       backstopTokenAddress: 'token',
       usdcAddress: 'usdc',
       blndAddress: 'blnd',
       keypair: Keypair.random().secret(),
+      pools: ['pool'],
       fillers: [
         {
           name: 'filler',
           keypair: Keypair.random().secret(),
           defaultProfitPct: 1,
-          minHealthFactor: 1,
-          primaryAsset: 'asset',
-          minPrimaryCollateral: '100',
-          forceFill: true,
+          supportedPools: [
+            {
+              poolAddress: 'pool',
+              primaryAsset: 'asset',
+              minPrimaryCollateral: '100',
+              minHealthFactor: 1,
+              forceFill: true,
+            },
+          ],
           supportedBid: ['bid'],
           supportedLot: ['lot'],
         },
@@ -74,9 +80,15 @@ describe('validateFiller', () => {
       name: 'filler',
       keypair: 'secret',
       defaultProfitPct: 1,
-      minHealthFactor: 1,
-      primaryAsset: 'asset',
-      minPrimaryCollateral: '100',
+      supportedPools: [
+        {
+          poolAddress: 'pool',
+          primaryAsset: 'asset',
+          minPrimaryCollateral: '100',
+          minHealthFactor: 1,
+          forceFill: true,
+        },
+      ],
       forceFill: true,
       supportedBid: ['bid'],
       supportedLot: 123, // Invalid type
@@ -93,6 +105,15 @@ describe('validateFiller', () => {
       primaryAsset: 'asset',
       minPrimaryCollateral: '100',
       forceFill: true,
+      supportedPools: [
+        {
+          poolAddress: 'pool',
+          primaryAsset: 'asset',
+          minPrimaryCollateral: '100',
+          minHealthFactor: 1,
+          forceFill: true,
+        },
+      ],
       supportedBid: ['bid'],
       supportedLot: ['lot'],
     };
@@ -169,5 +190,34 @@ describe('validateAuctionProfit', () => {
       supportedLot: ['asset2'],
     };
     expect(validateAuctionProfit(validProfits)).toBe(true);
+  });
+});
+
+describe('validatePoolConfig', () => {
+  it('should return false for non-object config', () => {
+    expect(validateAppConfig(null)).toBe(false);
+    expect(validateAppConfig('string')).toBe(false);
+  });
+
+  it('should return false for config with missing or incorrect properties', () => {
+    const invalidConfig = {
+      poolAddress: 'pool',
+      primaryAsset: 'asset',
+      minPrimaryCollateral: 100, // Invalid type
+      minHealthFactor: 1,
+      forceFill: true,
+    };
+    expect(validatePoolFillerConfig(invalidConfig)).toBe(false);
+  });
+
+  it('should return true for valid config', () => {
+    const validConfig = {
+      poolAddress: 'pool',
+      primaryAsset: 'asset',
+      minPrimaryCollateral: '100',
+      minHealthFactor: 1,
+      forceFill: true,
+    };
+    expect(validatePoolFillerConfig(validConfig)).toBe(true);
   });
 });

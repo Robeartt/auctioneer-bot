@@ -8,7 +8,7 @@ import {
   StatusEntry,
   PriceEntry,
 } from '../../src/utils/db.js';
-import { parse, stringify } from '../../src/utils/json.js';
+import { parse } from '../../src/utils/json.js';
 import { logger } from '../../src/utils/logger.js';
 import { inMemoryAuctioneerDb } from '../helpers/mocks.js';
 
@@ -82,6 +82,7 @@ describe('AuctioneerDatabase', () => {
   // User functions tests
   test('setUserEntry should add a new user entry', () => {
     const user1: UserEntry = {
+      pool_id: 'pool1',
       user_id: 'user1',
       health_factor: 1.0,
       collateral: new Map([['asset1', BigInt(100)]]),
@@ -90,6 +91,7 @@ describe('AuctioneerDatabase', () => {
     };
     db.setUserEntry(user1);
     const user2: UserEntry = {
+      pool_id: 'pool1',
       user_id: 'user2',
       health_factor: 1.0,
       collateral: new Map([['asset1', BigInt(100)]]),
@@ -97,12 +99,13 @@ describe('AuctioneerDatabase', () => {
       updated: Date.now(),
     };
     db.setUserEntry(user2);
-    const result = db.getUserEntry(user1.user_id);
+    const result = db.getUserEntry(user1.pool_id, user1.user_id);
     expect(result).toEqual(user1);
   });
 
   test('deleteUserEntry should remove an existing user entry', () => {
     const entry: UserEntry = {
+      pool_id: 'pool1',
       user_id: 'user1',
       health_factor: 1.0,
       collateral: new Map([['asset1', BigInt(100)]]),
@@ -110,13 +113,14 @@ describe('AuctioneerDatabase', () => {
       updated: Date.now(),
     };
     db.setUserEntry(entry);
-    db.deleteUserEntry(entry.user_id);
-    const result = db.getUserEntry(entry.user_id);
+    db.deleteUserEntry(entry.pool_id, entry.user_id);
+    const result = db.getUserEntry(entry.pool_id, entry.user_id);
     expect(result).toBeUndefined();
   });
 
   test('getUserEntriesUnderHealthFactor should return users with health factor under a certain value', () => {
     const user1: UserEntry = {
+      pool_id: 'pool1',
       user_id: 'user1',
       health_factor: 0.5,
       collateral: new Map([['asset1', BigInt(100)]]),
@@ -125,6 +129,7 @@ describe('AuctioneerDatabase', () => {
     };
     db.setUserEntry(user1);
     const user2: UserEntry = {
+      pool_id: 'pool1',
       user_id: 'user2',
       health_factor: 1.0,
       collateral: new Map([['asset1', BigInt(100)]]),
@@ -138,6 +143,7 @@ describe('AuctioneerDatabase', () => {
 
   test('getUserEntriesWithLiability should return users with a liability for a given asset', () => {
     const user1: UserEntry = {
+      pool_id: 'pool1',
       user_id: 'user1',
       health_factor: 1.0,
       collateral: new Map([['asset2', BigInt(100)]]),
@@ -146,6 +152,7 @@ describe('AuctioneerDatabase', () => {
     };
     db.setUserEntry(user1);
     const user2: UserEntry = {
+      pool_id: 'pool1',
       user_id: 'use2',
       health_factor: 1.0,
       collateral: new Map([['asset2', BigInt(100)]]),
@@ -153,12 +160,13 @@ describe('AuctioneerDatabase', () => {
       updated: Date.now(),
     };
     db.setUserEntry(user2);
-    const result = db.getUserEntriesWithLiability('asset1');
+    const result = db.getUserEntriesWithLiability('pool1', 'asset1');
     expect(result).toContainEqual(user1);
   });
 
   test('getUserEntriesWithCollateral should return users with a collateral for a given asset', () => {
     const user1: UserEntry = {
+      pool_id: 'pool1',
       user_id: 'user1',
       health_factor: 1.0,
       collateral: new Map([['asset1', BigInt(100)]]),
@@ -167,6 +175,7 @@ describe('AuctioneerDatabase', () => {
     };
     db.setUserEntry(user1);
     const user2: UserEntry = {
+      pool_id: 'pool1',
       user_id: 'user2',
       health_factor: 1.0,
       collateral: new Map([['asset2', BigInt(100)]]),
@@ -174,12 +183,13 @@ describe('AuctioneerDatabase', () => {
       updated: Date.now(),
     };
     db.setUserEntry(user2);
-    const result = db.getUserEntriesWithCollateral('asset1');
+    const result = db.getUserEntriesWithCollateral('pool1', 'asset1');
     expect(result).toContainEqual(user1);
   });
 
   test('getUserEntriesUpdatedBefore should return users updated before a certain ledger', () => {
     const user1: UserEntry = {
+      pool_id: 'pool1',
       user_id: 'user1',
       health_factor: 1.0,
       collateral: new Map([['asset1', BigInt(100)]]),
@@ -188,6 +198,7 @@ describe('AuctioneerDatabase', () => {
     };
     db.setUserEntry(user1);
     const user2: UserEntry = {
+      pool_id: 'pool1',
       user_id: 'user2',
       health_factor: 1.0,
       collateral: new Map([['asset1', BigInt(100)]]),
@@ -195,13 +206,14 @@ describe('AuctioneerDatabase', () => {
       updated: 200,
     };
     db.setUserEntry(user2);
-    const result = db.getUserEntriesUpdatedBefore(200);
+    const result = db.getUserEntriesUpdatedBefore('pool1', 200);
     expect(result).toContainEqual(user1);
   });
 
   // Auction functions tests
   test('setAuctionEntry should add a new auction entry', () => {
     const entry: AuctionEntry = {
+      pool_id: 'pool1',
       user_id: 'user1',
       auction_type: AuctionType.Liquidation,
       filler: 'filler1',
@@ -217,6 +229,7 @@ describe('AuctioneerDatabase', () => {
   // Auction functions tests
   test('getAuctionEntry should return the correct auction entry', () => {
     const entry: AuctionEntry = {
+      pool_id: 'pool1',
       user_id: 'user1',
       auction_type: AuctionType.Liquidation,
       filler: 'filler1',
@@ -225,17 +238,18 @@ describe('AuctioneerDatabase', () => {
       updated: Date.now(),
     };
     db.setAuctionEntry(entry);
-    const result = db.getAuctionEntry(entry.user_id, entry.auction_type);
+    const result = db.getAuctionEntry(entry.pool_id, entry.user_id, entry.auction_type);
     expect(result).toEqual(entry);
   });
 
   test('getAuctionEntry should return undefined for non-existing auction entry', () => {
-    const result = db.getAuctionEntry('non-existing', AuctionType.Liquidation);
+    const result = db.getAuctionEntry('pool1', 'non-existing', AuctionType.Liquidation);
     expect(result).toBeUndefined();
   });
 
   test('deleteAuctionEntry should remove an existing auction entry', () => {
     const entry1: AuctionEntry = {
+      pool_id: 'pool1',
       user_id: 'user1',
       auction_type: AuctionType.Liquidation,
       filler: 'filler1',
@@ -245,6 +259,7 @@ describe('AuctioneerDatabase', () => {
     };
     db.setAuctionEntry(entry1);
     const entry2: AuctionEntry = {
+      pool_id: 'pool1',
       user_id: 'user1',
       auction_type: AuctionType.Liquidation,
       filler: 'filler1',
@@ -253,7 +268,7 @@ describe('AuctioneerDatabase', () => {
       updated: Date.now(),
     };
     db.setAuctionEntry(entry2);
-    db.deleteAuctionEntry(entry1.user_id, entry1.auction_type);
+    db.deleteAuctionEntry(entry1.pool_id, entry1.user_id, entry1.auction_type);
     const result = db.getAllAuctionEntries();
     expect(result).not.toContainEqual(entry1);
   });
@@ -262,6 +277,7 @@ describe('AuctioneerDatabase', () => {
   test('setFilledAuctionEntry should add a new filled auction entry', () => {
     const entry: FilledAuctionEntry = {
       tx_hash: 'tx1',
+      pool_id: 'pool1',
       filler: 'filler1',
       user_id: 'user1',
       auction_type: AuctionType.Liquidation,
@@ -281,6 +297,7 @@ describe('AuctioneerDatabase', () => {
     expect({
       tx_hash: result.tx_hash,
       filler: result.filler,
+      pool_id: result.pool_id,
       user_id: result.user_id,
       auction_type: result.auction_type,
       bid: parse<Map<string, bigint>>(result.bid),
@@ -296,6 +313,7 @@ describe('AuctioneerDatabase', () => {
   test('getAllAuctionEntries should return all auction entries', () => {
     const entries: AuctionEntry[] = [
       {
+        pool_id: 'pool1',
         user_id: 'user1',
         auction_type: AuctionType.Liquidation,
         filler: 'filler1',
@@ -304,6 +322,7 @@ describe('AuctioneerDatabase', () => {
         updated: Date.now(),
       },
       {
+        pool_id: 'pool2',
         user_id: 'user2',
         auction_type: AuctionType.Liquidation,
         filler: 'filler2',

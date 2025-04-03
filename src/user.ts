@@ -21,7 +21,7 @@ export function updateUser(
 ) {
   // TODO: Store latest ledger on Positions
   if (ledger === undefined) {
-    ledger = pool.config.latestLedger;
+    ledger = pool.metadata.latestLedger;
   }
 
   if (user === undefined || positionsEstimate === undefined) {
@@ -32,15 +32,16 @@ export function updateUser(
     // user has liabilities, update db entry
     let collateralAddress = new Map<string, bigint>();
     for (let [assetIndex, amount] of user.positions.collateral) {
-      const asset = pool.config.reserveList[assetIndex];
+      const asset = pool.metadata.reserveList[assetIndex];
       collateralAddress.set(asset, amount);
     }
     let liabilitiesAddress = new Map<string, bigint>();
     for (let [assetIndex, amount] of user.positions.liabilities) {
-      const asset = pool.config.reserveList[assetIndex];
+      const asset = pool.metadata.reserveList[assetIndex];
       liabilitiesAddress.set(asset, amount);
     }
     const new_entry: UserEntry = {
+      pool_id: pool.id,
       user_id: user.userId,
       health_factor:
         positionsEstimate.totalEffectiveCollateral / positionsEstimate.totalEffectiveLiabilities,
@@ -50,13 +51,13 @@ export function updateUser(
     };
     db.setUserEntry(new_entry);
     logger.info(
-      `Updated user entry for ${user.userId} at ledger ${ledger} with health factor: ${new_entry.health_factor}.`
+      `Updated user entry for user: ${user.userId} in pool: ${pool.id} at ledger ${ledger} with health factor: ${new_entry.health_factor}.`
     );
   } else {
     // user does not have liabilities, remove db entry if it exists
-    db.deleteUserEntry(user.userId);
+    db.deleteUserEntry(pool.id, user.userId);
     logger.info(
-      `Deleted user entry for ${user.userId} at ledger ${ledger}, no liabilities remaining.`
+      `Deleted user entry for user: ${user.userId} in pool: ${pool.id} at ledger ${ledger}, no liabilities remaining.`
     );
   }
 }

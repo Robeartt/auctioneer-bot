@@ -33,11 +33,16 @@ describe('filler', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
         defaultProfitPct: 0.1,
-        minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
-        forceFill: true,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'ASSET1',
+            minPrimaryCollateral: BigInt(100),
+            minHealthFactor: 1.5,
+            forceFill: true,
+          },
+        ],
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
       };
@@ -53,7 +58,7 @@ describe('filler', () => {
         block: 123,
       };
 
-      const result = canFillerBid(filler, auctionData);
+      const result = canFillerBid(filler, mockPool.id, auctionData);
       expect(result).toBe(true);
     });
 
@@ -61,11 +66,16 @@ describe('filler', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
         defaultProfitPct: 0.1,
-        minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
-        forceFill: true,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'ASSET1',
+            minPrimaryCollateral: BigInt(100),
+            minHealthFactor: 1.5,
+            forceFill: true,
+          },
+        ],
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
       };
@@ -81,7 +91,7 @@ describe('filler', () => {
         block: 123,
       };
 
-      const result = canFillerBid(filler, auctionData);
+      const result = canFillerBid(filler, mockPool.id, auctionData);
       expect(result).toBe(false);
     });
 
@@ -89,11 +99,16 @@ describe('filler', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
         defaultProfitPct: 0.1,
-        minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
-        forceFill: true,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'ASSET1',
+            minPrimaryCollateral: BigInt(100),
+            minHealthFactor: 1.5,
+            forceFill: true,
+          },
+        ],
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
       };
@@ -109,20 +124,60 @@ describe('filler', () => {
         block: 123,
       };
 
-      const result = canFillerBid(filler, auctionData);
+      const result = canFillerBid(filler, mockPool.id, auctionData);
       expect(result).toBe(false);
     });
   });
+
+  it('returns false if the filler does not support the pool', () => {
+    const filler: Filler = {
+      name: 'Teapot',
+      keypair: Keypair.random(),
+      defaultProfitPct: 0.1,
+      supportedPools: [
+        {
+          poolAddress: mockPool.id,
+          primaryAsset: 'ASSET1',
+          minPrimaryCollateral: BigInt(100),
+          minHealthFactor: 1.5,
+          forceFill: true,
+        },
+      ],
+      supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
+      supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
+    };
+    const auctionData: AuctionData = {
+      bid: new Map<string, bigint>([
+        ['ASSET1', 100n],
+        ['ASSET3', 200n],
+      ]),
+      lot: new Map<string, bigint>([
+        ['ASSET1', 100n],
+        ['ASSET3', 200n],
+      ]),
+      block: 123,
+    };
+
+    const result = canFillerBid(filler, 'UNKNOWN POOL', auctionData);
+    expect(result).toBe(false);
+  });
+
   describe('getFillerProfitPct', () => {
     it('gets profitPct from profit config if available', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
+
         defaultProfitPct: 0.1,
-        minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
-        forceFill: true,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'ASSET1',
+            minPrimaryCollateral: BigInt(100),
+            minHealthFactor: 1.5,
+            forceFill: true,
+          },
+        ],
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
       };
@@ -155,11 +210,16 @@ describe('filler', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
         defaultProfitPct: 0.1,
-        minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
-        forceFill: true,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'ASSET1',
+            minPrimaryCollateral: BigInt(100),
+            minHealthFactor: 1.5,
+            forceFill: true,
+          },
+        ],
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
       };
@@ -189,11 +249,16 @@ describe('filler', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
         defaultProfitPct: 0.1,
-        minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
-        forceFill: true,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'ASSET1',
+            minPrimaryCollateral: BigInt(100),
+            minHealthFactor: 1.5,
+            forceFill: true,
+          },
+        ],
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
       };
@@ -226,11 +291,16 @@ describe('filler', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
         defaultProfitPct: 0.1,
-        minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
-        forceFill: true,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'ASSET1',
+            minPrimaryCollateral: BigInt(100),
+            minHealthFactor: 1.5,
+            forceFill: true,
+          },
+        ],
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
       };
@@ -263,11 +333,17 @@ describe('filler', () => {
       const filler: Filler = {
         name: 'Teapot',
         keypair: Keypair.random(),
-        primaryAsset: 'XLM',
+
         defaultProfitPct: 0.1,
-        minHealthFactor: 1.5,
-        minPrimaryCollateral: FixedMath.toFixed(100, 7),
-        forceFill: true,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'ASSET1',
+            minPrimaryCollateral: BigInt(100),
+            minHealthFactor: 1.5,
+            forceFill: true,
+          },
+        ],
         supportedBid: ['ASSET0', 'ASSET1', 'ASSET2'],
         supportedLot: ['ASSET1', 'ASSET2', 'ASSET3'],
       };
@@ -286,7 +362,7 @@ describe('filler', () => {
     });
   });
   describe('managePositions', () => {
-    const assets = mockPool.config.reserveList;
+    const assets = mockPool.metadata.reserveList;
     const mockOracle = new PoolOracle(
       'CATKK5ZNJCKQQWTUWIUFZMY6V6MOQUGSTFSXMNQZHVJHYF7GVV36FB3Y',
       new Map<string, PriceData>([
@@ -301,11 +377,16 @@ describe('filler', () => {
     const filler: Filler = {
       name: 'Teapot',
       keypair: Keypair.random(),
-      primaryAsset: assets[1],
       defaultProfitPct: 0.1,
-      minHealthFactor: 1.5,
-      minPrimaryCollateral: FixedMath.toFixed(100, 7),
-      forceFill: true,
+      supportedPools: [
+        {
+          poolAddress: mockPool.id,
+          primaryAsset: assets[1],
+          minPrimaryCollateral: FixedMath.toFixed(100, 7),
+          minHealthFactor: 1.5,
+          forceFill: true,
+        },
+      ],
       supportedBid: [assets[1], assets[0]],
       supportedLot: [assets[1], assets[2], assets[3]],
     };
@@ -397,7 +478,7 @@ describe('filler', () => {
     });
 
     it('can unwind looped positions', () => {
-      filler.minHealthFactor = 1.1;
+      filler.supportedPools[0].minHealthFactor = 1.1;
       const positions = new Positions(
         // dTokens
         new Map<number, bigint>([[1, FixedMath.toFixed(50000, 7)]]),
@@ -414,7 +495,7 @@ describe('filler', () => {
 
       const requests = managePositions(filler, mockPool, mockOracle, positions, balances);
       // return minimum health factor back to 1.5
-      filler.minHealthFactor = 1.5;
+      filler.supportedPools[0].minHealthFactor = 1.5;
 
       const expectedRequests: Request[] = [
         {
@@ -471,9 +552,7 @@ describe('filler', () => {
         // dTokens
         new Map<number, bigint>([]),
         // bTokens - (1.007 is ~b_rate)
-        new Map<number, bigint>([
-          [1, FixedMath.toFixed(100.8 / 1.007, 7)],
-        ]),
+        new Map<number, bigint>([[1, FixedMath.toFixed(100.8 / 1.007, 7)]]),
         new Map<number, bigint>([])
       );
       const balances = new Map<string, bigint>([
@@ -494,9 +573,7 @@ describe('filler', () => {
         // dTokens
         new Map<number, bigint>([[0, FixedMath.toFixed(200, 7)]]),
         // bTokens
-        new Map<number, bigint>([
-          [1, FixedMath.toFixed(150, 7)],
-        ]),
+        new Map<number, bigint>([[1, FixedMath.toFixed(150, 7)]]),
         new Map<number, bigint>([])
       );
       const balances = new Map<string, bigint>([

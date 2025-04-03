@@ -1,5 +1,22 @@
 #!/bin/bash
 
+# Default values
+POOL_ID=""
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -p|--prev-pool-id)
+            POOL_ID="$2"
+            shift 2
+            ;;
+        *)
+            # Skip unknown arguments
+            shift
+            ;;
+    esac
+done
+
 # Log versions of container
 echo "Node version: $(node -v)"
 echo "NPM version: $(npm -v)"
@@ -13,10 +30,13 @@ fi
 
 echo "Env file found."
 
-# Initialize the database
-sqlite3 ./data/auctioneer.sqlite < ./init_db.sql
 
-echo "Database initialized."
+
+# Set up the database
+./db/setup_db.sh -p $POOL_ID
+if [ $? -ne 0 ]; then
+      exit 1
+fi
 
 # Make a directory to store the logs at /app/data/logs if it does not exist
 if ! test -d ./data/logs; then

@@ -20,22 +20,49 @@ jest.mock('../src/utils/logger.js', () => ({
 }));
 jest.mock('../src/utils/config.js', () => {
   let config: AppConfig = {
-    backstopAddress: Keypair.random().publicKey(),
     fillers: [
       {
         name: 'filler1',
         keypair: Keypair.random(),
         defaultProfitPct: 0.05,
-        minHealthFactor: 1.1,
-        forceFill: true,
+        supportedPools: [
+          {
+            poolAddress: 'pool1',
+            primaryAsset: 'USD',
+            minPrimaryCollateral: 100n,
+            minHealthFactor: 1.1,
+            forceFill: true,
+          },
+          {
+            poolAddress: 'pool2',
+            primaryAsset: 'USD',
+            minPrimaryCollateral: 100n,
+            minHealthFactor: 1.1,
+            forceFill: true,
+          },
+        ],
         supportedBid: ['USD', 'BTC', 'LP'],
         supportedLot: ['USD', 'BTC', 'ETH'],
       },
       {
         name: 'filler2',
         keypair: Keypair.random(),
-        defaultProfitPct: 0.08,
-        minHealthFactor: 1.1,
+        supportedPools: [
+          {
+            poolAddress: 'pool1',
+            primaryAsset: 'USD',
+            minPrimaryCollateral: 100n,
+            minHealthFactor: 1.1,
+            forceFill: true,
+          },
+          {
+            poolAddress: 'pool2',
+            primaryAsset: 'USD',
+            minPrimaryCollateral: 100n,
+            minHealthFactor: 1.1,
+            forceFill: true,
+          },
+        ],
         forceFill: true,
         supportedBid: ['USD', 'ETH', 'XLM'],
         supportedLot: ['USD', 'ETH', 'XLM'],
@@ -75,6 +102,7 @@ describe('BidderHandler', () => {
   it('should update new auction entries on ledger event', async () => {
     let ledger = 1000;
     let auction_1: AuctionEntry = {
+      pool_id: 'pool1',
       user_id: 'user1',
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -83,6 +111,7 @@ describe('BidderHandler', () => {
       updated: ledger - 14,
     };
     let auction_2: AuctionEntry = {
+      pool_id: 'pool2',
       user_id: 'user2',
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[1].keypair.publicKey(),
@@ -108,12 +137,24 @@ describe('BidderHandler', () => {
     };
     mockedCalcAuctionFill.mockResolvedValue(fill_calc);
 
-    const appEvent: AppEvent = { type: EventType.LEDGER, ledger } as LedgerEvent;
-    await bidderHandler.processEvent(appEvent);
+    const Pool1AppEvent: AppEvent = {
+      type: EventType.LEDGER,
+      ledger,
+    } as LedgerEvent;
+    await bidderHandler.processEvent(Pool1AppEvent);
+    const Pool2AppEvent: AppEvent = {
+      type: EventType.LEDGER,
+      ledger,
+    } as LedgerEvent;
+    await bidderHandler.processEvent(Pool2AppEvent);
 
     expect(mockedSorobanHelper.loadAuction).toHaveBeenCalledTimes(1);
     // validate auction 2 is updated
-    let new_auction_2 = db.getAuctionEntry(auction_2.user_id, auction_2.auction_type);
+    let new_auction_2 = db.getAuctionEntry(
+      auction_2.pool_id,
+      auction_2.user_id,
+      auction_2.auction_type
+    );
     expect(new_auction_2).toBeDefined();
     expect(new_auction_2?.user_id).toEqual(auction_2.user_id);
     expect(new_auction_2?.auction_type).toEqual(auction_2.auction_type);
@@ -124,7 +165,11 @@ describe('BidderHandler', () => {
     expect(mockedSendSlackNotif).toHaveBeenCalledTimes(1);
 
     // validate auction 1 is not updated
-    let new_auction_1 = db.getAuctionEntry(auction_1.user_id, auction_1.auction_type);
+    let new_auction_1 = db.getAuctionEntry(
+      auction_1.pool_id,
+      auction_1.user_id,
+      auction_1.auction_type
+    );
     expect(new_auction_1?.fill_block).toEqual(auction_1.fill_block);
     expect(new_auction_1?.updated).toEqual(auction_1.updated);
   });
@@ -132,6 +177,7 @@ describe('BidderHandler', () => {
   it('should update auction entries on the 10th block and less than 5 blocks on ledger event', async () => {
     let ledger = 1000; // nextLedger is 1001
     let auction_1: AuctionEntry = {
+      pool_id: 'pool1',
       user_id: 'user1',
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -140,6 +186,7 @@ describe('BidderHandler', () => {
       updated: ledger - 10,
     };
     let auction_2: AuctionEntry = {
+      pool_id: 'pool1',
       user_id: 'backstop',
       auction_type: AuctionType.Interest,
       filler: APP_CONFIG.fillers[1].keypair.publicKey(),
@@ -172,16 +219,27 @@ describe('BidderHandler', () => {
     };
     mockedCalcAuctionFill.mockResolvedValueOnce(fill_calc_1).mockResolvedValueOnce(fill_calc_2);
 
-    const appEvent: AppEvent = { type: EventType.LEDGER, ledger } as LedgerEvent;
+    const appEvent: AppEvent = {
+      type: EventType.LEDGER,
+      ledger,
+    } as LedgerEvent;
     await bidderHandler.processEvent(appEvent);
 
     // validate auction 1 is updated
-    let new_auction_1 = db.getAuctionEntry(auction_1.user_id, auction_1.auction_type);
+    let new_auction_1 = db.getAuctionEntry(
+      auction_1.pool_id,
+      auction_1.user_id,
+      auction_1.auction_type
+    );
     expect(new_auction_1?.fill_block).toEqual(fill_calc_1.block);
     expect(new_auction_1?.updated).toEqual(ledger);
 
     // validate auction 2 is updated
-    let new_auction_2 = db.getAuctionEntry(auction_2.user_id, auction_2.auction_type);
+    let new_auction_2 = db.getAuctionEntry(
+      auction_2.pool_id,
+      auction_2.user_id,
+      auction_2.auction_type
+    );
     expect(new_auction_2?.fill_block).toEqual(fill_calc_2.block);
     expect(new_auction_2?.updated).toEqual(ledger);
   });
@@ -189,6 +247,7 @@ describe('BidderHandler', () => {
   it('should place auction on submitter queue if fill block is reached or past on ledger event', async () => {
     let ledger = 1000; // nextLedger is 1001
     let auction_1: AuctionEntry = {
+      pool_id: 'pool1',
       user_id: 'user1',
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -197,6 +256,7 @@ describe('BidderHandler', () => {
       updated: ledger - 1,
     };
     let auction_2: AuctionEntry = {
+      pool_id: 'pool1',
       user_id: 'backstop',
       auction_type: AuctionType.Interest,
       filler: APP_CONFIG.fillers[1].keypair.publicKey(),
@@ -230,11 +290,18 @@ describe('BidderHandler', () => {
     };
     mockedCalcAuctionFill.mockResolvedValueOnce(fill_calc_1).mockResolvedValueOnce(fill_calc_2);
 
-    const appEvent: AppEvent = { type: EventType.LEDGER, ledger } as LedgerEvent;
+    const appEvent: AppEvent = {
+      type: EventType.LEDGER,
+      ledger,
+    } as LedgerEvent;
     await bidderHandler.processEvent(appEvent);
 
     // validate auction 1 is placed on submission queue
-    let new_auction_1 = db.getAuctionEntry(auction_1.user_id, auction_1.auction_type);
+    let new_auction_1 = db.getAuctionEntry(
+      auction_1.pool_id,
+      auction_1.user_id,
+      auction_1.auction_type
+    );
     expect(new_auction_1?.fill_block).toEqual(fill_calc_1.block);
     expect(new_auction_1?.updated).toEqual(ledger);
 
@@ -246,7 +313,11 @@ describe('BidderHandler', () => {
     expect(mockedBidderSubmitter.addSubmission).toHaveBeenCalledWith(submission_1, 10);
 
     // validate auction 2 is placed on submission queue
-    let new_auction_2 = db.getAuctionEntry(auction_2.user_id, auction_2.auction_type);
+    let new_auction_2 = db.getAuctionEntry(
+      auction_2.pool_id,
+      auction_2.user_id,
+      auction_2.auction_type
+    );
     expect(new_auction_2?.fill_block).toEqual(fill_calc_2.block);
     expect(new_auction_2?.updated).toEqual(ledger);
 
@@ -261,6 +332,7 @@ describe('BidderHandler', () => {
   it('should skip an auction if it is already on the submission queue on ledger event', async () => {
     let ledger = 1000; // nextLedger is 1001
     let auction_1: AuctionEntry = {
+      pool_id: 'pool1',
       user_id: 'user1',
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -290,7 +362,11 @@ describe('BidderHandler', () => {
     await bidderHandler.processEvent(appEvent);
 
     // validate auction 1 is not updated
-    let new_auction_1 = db.getAuctionEntry(auction_1.user_id, auction_1.auction_type);
+    let new_auction_1 = db.getAuctionEntry(
+      auction_1.pool_id,
+      auction_1.user_id,
+      auction_1.auction_type
+    );
     expect(new_auction_1?.fill_block).toEqual(auction_1.fill_block);
     expect(new_auction_1?.updated).toEqual(auction_1.updated);
     expect(mockedBidderSubmitter.addSubmission).toHaveBeenCalledTimes(0);
@@ -299,6 +375,7 @@ describe('BidderHandler', () => {
   it('should skip an auction if processing throws on ledger event', async () => {
     let ledger = 1000; // nextLedger is 1001
     let auction_1: AuctionEntry = {
+      pool_id: 'pool1',
       user_id: 'user1',
       auction_type: AuctionType.Liquidation,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
@@ -307,6 +384,7 @@ describe('BidderHandler', () => {
       updated: ledger - 10,
     };
     let auction_2: AuctionEntry = {
+      pool_id: 'pool1',
       user_id: 'backstop',
       auction_type: AuctionType.Interest,
       filler: APP_CONFIG.fillers[1].keypair.publicKey(),
@@ -334,18 +412,68 @@ describe('BidderHandler', () => {
     };
     mockedCalcAuctionFill.mockResolvedValue(fill_calc_2);
 
-    const appEvent: AppEvent = { type: EventType.LEDGER, ledger } as LedgerEvent;
-    await bidderHandler.processEvent(appEvent);
+    const appEvent1: AppEvent = {
+      type: EventType.LEDGER,
+      ledger,
+    } as LedgerEvent;
+    await bidderHandler.processEvent(appEvent1);
 
     // validate auction 1 is not updated (error)
-    let new_auction_1 = db.getAuctionEntry(auction_1.user_id, auction_1.auction_type);
+    let new_auction_1 = db.getAuctionEntry(
+      auction_1.pool_id,
+      auction_1.user_id,
+      auction_1.auction_type
+    );
     expect(new_auction_1?.fill_block).toEqual(auction_1.fill_block);
     expect(new_auction_1?.updated).toEqual(auction_1.updated);
     expect(logger.error).toHaveBeenCalledTimes(1);
 
     // validate auction 2 is updated
-    let new_auction_2 = db.getAuctionEntry(auction_2.user_id, auction_2.auction_type);
+    let new_auction_2 = db.getAuctionEntry(
+      auction_2.pool_id,
+      auction_2.user_id,
+      auction_2.auction_type
+    );
     expect(new_auction_2?.fill_block).toEqual(fill_calc_2.block);
     expect(new_auction_2?.updated).toEqual(ledger);
+  });
+
+  it('should skip an auction if unable to find filler', async () => {
+    let ledger = 1000; // nextLedger is 1001
+    let auction_1: AuctionEntry = {
+      pool_id: 'pool1',
+      user_id: 'user1',
+      auction_type: AuctionType.Liquidation,
+      filler: Keypair.random().publicKey(),
+      start_block: ledger - 150,
+      fill_block: ledger + 5,
+      updated: ledger - 5,
+    };
+
+    db.setAuctionEntry(auction_1);
+    mockedSorobanHelper.loadAuction.mockResolvedValueOnce(
+      new Auction('teapot', AuctionType.Liquidation, {
+        bid: new Map<string, bigint>(),
+        lot: new Map<string, bigint>(),
+        block: ledger - 1,
+      })
+    );
+
+    const appEvent1: AppEvent = {
+      type: EventType.LEDGER,
+      ledger,
+    } as LedgerEvent;
+    await bidderHandler.processEvent(appEvent1);
+
+    // validate auction 1 is not updated (error)
+    let new_auction_1 = db.getAuctionEntry(
+      auction_1.pool_id,
+      auction_1.user_id,
+      auction_1.auction_type
+    );
+    expect(new_auction_1?.fill_block).toEqual(auction_1.fill_block);
+    expect(new_auction_1?.updated).toEqual(auction_1.updated);
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(mockedSorobanHelper.loadAuction).not.toHaveBeenCalled();
   });
 });

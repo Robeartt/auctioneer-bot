@@ -40,8 +40,6 @@ jest.mock('../src/utils/config.js', () => {
     APP_CONFIG: {
       rpcURL: 'http://localhost:8000/rpc',
       networkPassphrase: 'Public Global Stellar Network ; September 2015',
-      poolAddress: 'CBP7NO6F7FRDHSOFQBT2L2UWYIZ2PU76JKVRYAQTG3KZSQLYAOKIF2WB',
-      backstopAddress: 'CAO3AGAMZVRMHITL36EJ2VZQWKYRPWMQAPDQD5YEOF3GIF7T44U4JAL3',
       backstopTokenAddress: 'CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM',
       usdcAddress: 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75',
       blndAddress: 'CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY',
@@ -122,10 +120,15 @@ describe('BidderSubmitter', () => {
       name: 'test-filler',
       keypair: Keypair.random(),
       defaultProfitPct: 0,
-      minHealthFactor: 0,
-      primaryAsset: 'USD',
-      minPrimaryCollateral: 0n,
-      forceFill: false,
+      supportedPools: [
+        {
+          poolAddress: mockPool.id,
+          primaryAsset: 'USD',
+          minPrimaryCollateral: 100n,
+          minHealthFactor: 1,
+          forceFill: false,
+        },
+      ],
       supportedBid: [],
       supportedLot: [],
     };
@@ -133,6 +136,7 @@ describe('BidderSubmitter', () => {
       type: BidderSubmissionType.BID,
       filler,
       auctionEntry: {
+        pool_id: mockPool.id,
         user_id: auction.user,
         auction_type: AuctionType.Liquidation,
         filler: filler.keypair.publicKey(),
@@ -145,6 +149,7 @@ describe('BidderSubmitter', () => {
 
     const expectedFillEntry: FilledAuctionEntry = {
       tx_hash: 'mock-tx-hash',
+      pool_id: mockPool.id,
       filler: submission.auctionEntry.filler,
       user_id: auction.user,
       auction_type: submission.auctionEntry.auction_type,
@@ -158,13 +163,14 @@ describe('BidderSubmitter', () => {
     };
     expect(result).toBe(true);
     expect(mockedSorobanHelper.loadAuction).toHaveBeenCalledWith(
+      mockPool.id,
       submission.auctionEntry.user_id,
       submission.auctionEntry.auction_type
     );
     expect(mockedSorobanHelper.submitTransaction).toHaveBeenCalled();
     expect(mockDb.setFilledAuctionEntry).toHaveBeenCalledWith(expectedFillEntry);
     expect(bidderSubmitter.addSubmission).toHaveBeenCalledWith(
-      { type: BidderSubmissionType.UNWIND, filler: submission.filler },
+      { type: BidderSubmissionType.UNWIND, filler: submission.filler, poolId: mockPool.id },
       2
     );
   });
@@ -179,14 +185,20 @@ describe('BidderSubmitter', () => {
         name: 'test-filler',
         keypair: Keypair.random(),
         defaultProfitPct: 0,
-        minHealthFactor: 0,
-        primaryAsset: 'USD',
-        minPrimaryCollateral: 0n,
-        forceFill: false,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'USD',
+            minPrimaryCollateral: 100n,
+            minHealthFactor: 1,
+            forceFill: false,
+          },
+        ],
         supportedBid: [],
         supportedLot: [],
       },
       auctionEntry: {
+        pool_id: mockPool.id,
         user_id: 'test-user',
         auction_type: AuctionType.Liquidation,
       } as AuctionEntry,
@@ -219,14 +231,20 @@ describe('BidderSubmitter', () => {
 
     const submission: FillerUnwind = {
       type: BidderSubmissionType.UNWIND,
+      poolId: mockPool.id,
       filler: {
         name: 'test-filler',
         keypair: Keypair.random(),
         defaultProfitPct: 0,
-        minHealthFactor: 0,
-        primaryAsset: 'USD',
-        minPrimaryCollateral: 100n,
-        forceFill: false,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'USD',
+            minPrimaryCollateral: 100n,
+            minHealthFactor: 1,
+            forceFill: false,
+          },
+        ],
         supportedBid: ['USD', 'XLM'],
         supportedLot: ['EURC', 'XLM'],
       },
@@ -260,14 +278,20 @@ describe('BidderSubmitter', () => {
 
     const submission: FillerUnwind = {
       type: BidderSubmissionType.UNWIND,
+      poolId: mockPool.id,
       filler: {
         name: 'test-filler',
         keypair: Keypair.random(),
         defaultProfitPct: 0,
-        minHealthFactor: 0,
-        primaryAsset: 'USD',
-        minPrimaryCollateral: 100n,
-        forceFill: false,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'USD',
+            minPrimaryCollateral: 100n,
+            minHealthFactor: 0,
+            forceFill: false,
+          },
+        ],
         supportedBid: ['USD', 'XLM'],
         supportedLot: ['EURC', 'XLM'],
       },
@@ -286,6 +310,7 @@ describe('BidderSubmitter', () => {
 
   it('should return true if auction is in the queue', () => {
     const auctionEntry: AuctionEntry = {
+      pool_id: mockPool.id,
       user_id: 'test-user',
       auction_type: AuctionType.Liquidation,
     } as AuctionEntry;
@@ -303,6 +328,7 @@ describe('BidderSubmitter', () => {
 
   it('should return false if auction is not in the queue', () => {
     const auctionEntry: AuctionEntry = {
+      pool_id: mockPool.id,
       user_id: 'test-user',
       auction_type: AuctionType.Liquidation,
     } as AuctionEntry;
@@ -319,15 +345,21 @@ describe('BidderSubmitter', () => {
         name: 'test-filler',
         keypair: Keypair.random(),
         defaultProfitPct: 0,
-        minHealthFactor: 0,
-        primaryAsset: 'USD',
-        minPrimaryCollateral: 0n,
-        forceFill: false,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'USD',
+            minPrimaryCollateral: 100n,
+            minHealthFactor: 1,
+            forceFill: false,
+          },
+        ],
         supportedBid: [],
         supportedLot: [],
       },
       auctionEntry: {
         user_id: 'test-user',
+        pool_id: mockPool.id,
         auction_type: AuctionType.Liquidation,
         start_block: 900,
         fill_block: 1000,
@@ -340,6 +372,7 @@ describe('BidderSubmitter', () => {
     expect(logger.error).toHaveBeenCalledWith(
       `Dropped auction bid\n` +
         `Type: ${AuctionType[submission.auctionEntry.auction_type]}\n` +
+        `Pool: ${mockPool.id}\n` +
         `User: ${submission.auctionEntry.user_id}\n` +
         `Start Block: ${submission.auctionEntry.start_block}\n` +
         `Fill Block: ${submission.auctionEntry.fill_block}\n` +
@@ -348,6 +381,7 @@ describe('BidderSubmitter', () => {
     expect(mockedSendSlackNotif).toHaveBeenCalledWith(
       `Dropped auction bid\n` +
         `Type: ${AuctionType[submission.auctionEntry.auction_type]}\n` +
+        `Pool: ${mockPool.id}\n` +
         `User: ${submission.auctionEntry.user_id}\n` +
         `Start Block: ${submission.auctionEntry.start_block}\n` +
         `Fill Block: ${submission.auctionEntry.fill_block}\n` +
@@ -358,14 +392,20 @@ describe('BidderSubmitter', () => {
   it('should handle dropped unwind', async () => {
     const submission: FillerUnwind = {
       type: BidderSubmissionType.UNWIND,
+      poolId: mockPool.id,
       filler: {
         name: 'test-filler',
         keypair: Keypair.random(),
         defaultProfitPct: 0,
-        minHealthFactor: 0,
-        primaryAsset: 'USD',
-        minPrimaryCollateral: 0n,
-        forceFill: false,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'USD',
+            minPrimaryCollateral: 100n,
+            minHealthFactor: 0,
+            forceFill: false,
+          },
+        ],
         supportedBid: [],
         supportedLot: [],
       },
@@ -374,10 +414,10 @@ describe('BidderSubmitter', () => {
     await bidderSubmitter.onDrop(submission);
 
     expect(logger.error).toHaveBeenCalledWith(
-      `Dropped filler unwind\n` + `Filler: ${submission.filler.name}\n`
+      `Dropped filler unwind\n` + `Filler: ${submission.filler.name}\n` + `Pool: ${mockPool.id}`
     );
     expect(mockedSendSlackNotif).toHaveBeenCalledWith(
-      `Dropped filler unwind\n` + `Filler: ${submission.filler.name}\n`
+      `Dropped filler unwind\n` + `Filler: ${submission.filler.name}\n` + `Pool: ${mockPool.id}`
     );
   });
 });

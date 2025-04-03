@@ -1,4 +1,4 @@
-import { BlendContractType, PoolEventType, PoolNewAuctionEvent } from '@blend-capital/blend-sdk';
+import { BlendContractType, PoolEventType, PoolNewAuctionV1Event } from '@blend-capital/blend-sdk';
 import { EventType, PoolEventEvent } from '../../src/events.js';
 import { UserEntry } from '../../src/utils/db.js';
 import { parse, stringify } from '../../src/utils/json.js';
@@ -6,6 +6,7 @@ import { parse, stringify } from '../../src/utils/json.js';
 test('user entry parse round trip', () => {
   // happy path
   const userTest: UserEntry = {
+    pool_id: 'test',
     user_id: 'test',
     health_factor: 2.5,
     collateral: new Map<string, bigint>([
@@ -30,6 +31,7 @@ test('user entry parse round trip', () => {
 
   // with an empty map
   const userTestEmpty: UserEntry = {
+    pool_id: 'test',
     user_id: 'test',
     health_factor: 2.5,
     collateral: new Map<string, bigint>([['asset3', BigInt(123)]]),
@@ -62,7 +64,7 @@ test('user entry parse round trip', () => {
 });
 
 test('blend event parse round trip', () => {
-  const blendEvent: PoolNewAuctionEvent = {
+  const blendEvent: PoolNewAuctionV1Event = {
     id: 'abc',
     contractId: '123',
     contractType: BlendContractType.Pool,

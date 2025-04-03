@@ -2,10 +2,12 @@ import { AppEvent, EventType } from './events.js';
 import { checkUsersForLiquidationsAndBadDebt, scanUsers } from './liquidations.js';
 import { OracleHistory } from './oracle_history.js';
 import { updateUser } from './user.js';
+import { APP_CONFIG } from './utils/config.js';
 import { AuctioneerDatabase } from './utils/db.js';
 import { logger } from './utils/logger.js';
 import { deadletterEvent } from './utils/messages.js';
 import { setPrices } from './utils/prices.js';
+import { sendSlackNotification } from './utils/slack_notifier.js';
 import { SorobanHelper } from './utils/soroban_helper.js';
 import { WorkSubmitter } from './work_submitter.js';
 
@@ -49,10 +51,13 @@ export class WorkHandler {
       } catch (error) {
         retries++;
         if (retries >= MAX_RETRIES) {
+          if (appEvent.type === EventType.VALIDATE_POOLS) {
+            throw error;
+          }
           await deadletterEvent(appEvent);
           return false;
         }
-        logger.warn(`Error processing event.`, error);
+        logger.warn(`Error processing ${appEvent.type}.`, error);
         logger.warn(
           `Retry ${retries + 1}/${MAX_RETRIES}. Waiting ${RETRY_DELAY}ms before next attempt.`
         );
@@ -72,34 +77,55 @@ export class WorkHandler {
    */
   async processEvent(appEvent: AppEvent): Promise<void> {
     switch (appEvent.type) {
+      case EventType.VALIDATE_POOLS: {
+        for (const poolId of appEvent.pools) {
+          try {
+            let pool = await this.sorobanHelper.loadPool(poolId);
+            if (pool.metadata.backstop !== APP_CONFIG.backstopAddress) {
+              throw new Error(
+                `Backstop address for pool: ${poolId} is not the expected address: ${APP_CONFIG.backstopAddress}`
+              );
+            }
+          } catch (error) {
+            throw new Error(
+              `Failed to load pool: ${poolId} please check that the address is correct and the pool is version 1. Error: ${error}`
+            );
+          }
+        }
+        break;
+      }
+
       case EventType.PRICE_UPDATE: {
         await setPrices(this.db);
         break;
       }
       case EventType.ORACLE_SCAN: {
-        const poolOracle = await this.sorobanHelper.loadPoolOracle();
-        const priceChanges = this.oracleHistory.getSignificantPriceChanges(poolOracle);
-        // @dev: Insert into a set to ensure uniqueness
-        let usersToCheck = new Set<string>();
-        for (const assetId of priceChanges.up) {
-          const usersWithLiability = this.db.getUserEntriesWithLiability(assetId);
-          for (const user of usersWithLiability) {
-            usersToCheck.add(user.user_id);
+        for (const poolId of APP_CONFIG.pools) {
+          let usersToCheck = new Set<string>();
+          const poolOracle = await this.sorobanHelper.loadPoolOracle(poolId);
+          const priceChanges = this.oracleHistory.getSignificantPriceChanges(poolOracle);
+          // @dev: Insert into a set to ensure uniqueness
+          for (const assetId of priceChanges.up) {
+            const usersWithLiability = this.db.getUserEntriesWithLiability(poolId, assetId);
+            for (const user of usersWithLiability) {
+              usersToCheck.add(user.user_id);
+            }
           }
-        }
-        for (const assetId of priceChanges.down) {
-          const usersWithCollateral = this.db.getUserEntriesWithCollateral(assetId);
-          for (const user of usersWithCollateral) {
-            usersToCheck.add(user.user_id);
+          for (const assetId of priceChanges.down) {
+            const usersWithCollateral = this.db.getUserEntriesWithCollateral(poolId, assetId);
+            for (const user of usersWithCollateral) {
+              usersToCheck.add(user.user_id);
+            }
           }
-        }
-        const liquidations = await checkUsersForLiquidationsAndBadDebt(
-          this.db,
-          this.sorobanHelper,
-          Array.from(usersToCheck)
-        );
-        for (const liquidation of liquidations) {
-          this.submissionQueue.addSubmission(liquidation, 3);
+          const liquidations = await checkUsersForLiquidationsAndBadDebt(
+            this.db,
+            this.sorobanHelper,
+            poolId,
+            Array.from(usersToCheck)
+          );
+          for (const liquidation of liquidations) {
+            this.submissionQueue.addSubmission(liquidation, 3);
+          }
         }
         break;
       }
@@ -111,25 +137,55 @@ export class WorkHandler {
         break;
       }
       case EventType.USER_REFRESH: {
-        const oldUsers = this.db.getUserEntriesUpdatedBefore(appEvent.cutoff);
-        if (oldUsers.length === 0) {
-          return;
+        for (const poolId of APP_CONFIG.pools) {
+          try {
+            const pool = await this.sorobanHelper.loadPool(poolId);
+            const oldUsers = this.db.getUserEntriesUpdatedBefore(poolId, appEvent.cutoff);
+
+            for (const user of oldUsers) {
+              try {
+                if (!poolId) {
+                  if (user.updated < appEvent.cutoff) {
+                    this.db.deleteUserEntry(user.pool_id, user.user_id);
+                    logger.warn(`User found in unsupported pool. Deleting user.`);
+                  }
+                  continue;
+                }
+                if (user.updated < appEvent.cutoff) {
+                  const logMessage =
+                    `Warning user has not been updated since ledger ${appEvent.cutoff}\n` +
+                    `Pool: ${poolId}\n` +
+                    `User: ${user.user_id}`;
+                  logger.error(logMessage);
+                  await sendSlackNotification(logMessage);
+                }
+
+                const { estimate: poolUserEstimate, user: poolUser } =
+                  await this.sorobanHelper.loadUserPositionEstimate(poolId, user.user_id);
+                updateUser(this.db, pool, poolUser, poolUserEstimate);
+              } catch (e) {
+                logger.error(`Error refreshing user ${user.user_id} in pool ${user.pool_id}: ${e}`);
+              }
+            }
+          } catch (e) {
+            logger.error(`Error refreshing users in pool ${poolId}: ${e}`);
+            continue;
+          }
         }
-        const pool = await this.sorobanHelper.loadPool();
-        for (const user of oldUsers) {
-          const { estimate: poolUserEstimate, user: poolUser } =
-            await this.sorobanHelper.loadUserPositionEstimate(user.user_id);
-          updateUser(this.db, pool, poolUser, poolUserEstimate);
-        }
+
         break;
       }
       case EventType.CHECK_USER: {
-        const submissions = await checkUsersForLiquidationsAndBadDebt(this.db, this.sorobanHelper, [
-          appEvent.userId,
-        ]);
+        const submissions = await checkUsersForLiquidationsAndBadDebt(
+          this.db,
+          this.sorobanHelper,
+          appEvent.poolId,
+          [appEvent.userId]
+        );
         for (const submission of submissions) {
           this.submissionQueue.addSubmission(submission, 3);
         }
+        break;
       }
       default:
         logger.error(`Unhandled event type: ${appEvent.type}`);
