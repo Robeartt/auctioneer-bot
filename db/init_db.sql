@@ -61,8 +61,3 @@ CREATE TABLE IF NOT EXISTS filled_auctions (
 );
 CREATE INDEX IF NOT EXISTS idx_filler ON filled_auctions(filler);
 
-INSERT INTO db_version (version, description, applied_at)
-SELECT 2, 'init db', unixepoch()
-WHERE NOT EXISTS (
-    SELECT 1 FROM db_version LIMIT 1
-);

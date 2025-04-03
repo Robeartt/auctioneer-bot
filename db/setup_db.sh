@@ -2,9 +2,11 @@
 
 # Set variables
 DB_PATH="./data/auctioneer.sqlite"
-MIGRATION_SCRIPT="./db/migrate_db_v1_to_v2.sql"
+V2_MIGRATION_SCRIPT="./db/migrate_db_v1_to_v2.sql"
 
 PREV_POOL_ID=""
+DOES_DB_EXIST=1
+CURRENT_DB_VERSION=2
 
 # Function to display usage information
 show_usage() {
@@ -43,13 +45,24 @@ fi
 
 # Check if database file exists
 if ! test -f $DB_PATH; then
-    echo "Error: Database file $DB_PATH does not exist."
-    exit 1
+    # Initialize the database
+    DOES_DB_EXIST=0
+fi
+
+# Check that all tables exist or create them
+sqlite3 ./data/auctioneer.sqlite < ./db/init_db.sql
+
+if [ "$DOES_DB_EXIST" -eq 0 ]; then
+    sqlite3 "$DB_PATH" "
+        INSERT INTO db_version (version, description, applied_at)
+        SELECT 2, 'init db', unixepoch();
+    " 
+    echo "Database initialized."
 fi
 
 # Check if migration script exists
-if [ ! -f "$MIGRATION_SCRIPT" ]; then
-    echo "Error: Migration script $MIGRATION_SCRIPT does not exist."
+if [ ! -f "$V2_MIGRATION_SCRIPT" ]; then
+    echo "Error: Migration script $V2_MIGRATION_SCRIPT does not exist."
     exit 1
 fi
 
@@ -79,7 +92,7 @@ if [ "$CURRENT_VERSION" -lt 2 ]; then
     echo "Applying migration to version 2..."
 
  # First run the migration script to create the new tables
-    sqlite3 "$DB_PATH" < "$MIGRATION_SCRIPT"
+    sqlite3 "$DB_PATH" < "$V2_MIGRATION_SCRIPT"
     MIGRATION_RESULT=$?
     
     # Check if migration was successful

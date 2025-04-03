@@ -45,6 +45,8 @@ For an example config file that is configured to interact with [Blend v1 mainnet
 
 ### Database Migration
 
+**It is highly recommended to create a backup of the database file before attempting any migration.**
+
 For auctioneers that were started before multi-pool functionality a db migration will be neccessary. On startup of the updated auctioneer bot a command line argument will be required to be inputed with `-p` or `--prev-pool-id` followed by the pool id that the single pool auctioneer bot was using. The migration will update the database to the new schema and will populate the pool id column with the one provided.
 
 #### General Settings

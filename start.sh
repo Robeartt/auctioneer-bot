@@ -6,7 +6,7 @@ POOL_ID=""
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -p|--pool-id)
+        -p|--prev-pool-id)
             POOL_ID="$2"
             shift 2
             ;;
@@ -30,13 +30,10 @@ fi
 
 echo "Env file found."
 
-# Initialize the database
-sqlite3 ./data/auctioneer.sqlite < ./db/init_db.sql
 
-echo "Database initialized."
 
-# Migrate to the latest database schema
-./db/migrations.sh -p $POOL_ID
+# Set up the database
+./db/setup_db.sh -p $POOL_ID
 if [ $? -ne 0 ]; then
       exit 1
 fi
