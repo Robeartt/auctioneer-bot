@@ -347,11 +347,11 @@ export class AuctioneerDatabase {
    * @param ledger - The ledger to filter by
    * @returns An array user entries, or an empty array if none are found
    */
-  getUserEntriesUpdatedBefore(ledger: number, limit: number = 10): UserEntry[] {
+  getUserEntriesUpdatedBefore(poolId: string, ledger: number, limit: number = 20): UserEntry[] {
     try {
       let entries: any[] = this.db
-        .prepare('SELECT * FROM users WHERE updated < ? LIMIT ? ')
-        .all(ledger, limit);
+        .prepare('SELECT * FROM users WHERE pool_id = ? AND updated < ? LIMIT ?')
+        .all(poolId, ledger, limit);
       return entries.map((entry) => {
         return {
           pool_id: entry.pool_id,

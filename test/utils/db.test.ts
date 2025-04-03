@@ -206,7 +206,7 @@ describe('AuctioneerDatabase', () => {
       updated: 200,
     };
     db.setUserEntry(user2);
-    const result = db.getUserEntriesUpdatedBefore(200);
+    const result = db.getUserEntriesUpdatedBefore('pool1', 200);
     expect(result).toContainEqual(user1);
   });
 

@@ -137,38 +137,42 @@ export class WorkHandler {
         break;
       }
       case EventType.USER_REFRESH: {
-        const oldUsers = this.db.getUserEntriesUpdatedBefore(appEvent.cutoff);
-        if (oldUsers.length === 0) {
-          return;
-        }
-
-        for (const user of oldUsers) {
+        for (const poolId of APP_CONFIG.pools) {
           try {
-            const poolId = APP_CONFIG.pools.find((pool) => pool === user.pool_id);
-            if (!poolId) {
-              if (user.updated < appEvent.cutoff) {
-                this.db.deleteUserEntry(user.pool_id, user.user_id);
-                logger.warn(`User found in unsupported pool. Deleting user.`);
-              }
-              continue;
-            }
-            if (user.updated < appEvent.cutoff) {
-              const logMessage =
-                `Warning user has not been updated since ledger ${appEvent.cutoff}\n` +
-                `Pool: ${poolId}\n` +
-                `User: ${user.user_id}`;
-              logger.error(logMessage);
-              await sendSlackNotification(logMessage);
-            }
             const pool = await this.sorobanHelper.loadPool(poolId);
+            const oldUsers = this.db.getUserEntriesUpdatedBefore(poolId, appEvent.cutoff);
 
-            const { estimate: poolUserEstimate, user: poolUser } =
-              await this.sorobanHelper.loadUserPositionEstimate(poolId, user.user_id);
-            updateUser(this.db, pool, poolUser, poolUserEstimate);
+            for (const user of oldUsers) {
+              try {
+                if (!poolId) {
+                  if (user.updated < appEvent.cutoff) {
+                    this.db.deleteUserEntry(user.pool_id, user.user_id);
+                    logger.warn(`User found in unsupported pool. Deleting user.`);
+                  }
+                  continue;
+                }
+                if (user.updated < appEvent.cutoff) {
+                  const logMessage =
+                    `Warning user has not been updated since ledger ${appEvent.cutoff}\n` +
+                    `Pool: ${poolId}\n` +
+                    `User: ${user.user_id}`;
+                  logger.error(logMessage);
+                  await sendSlackNotification(logMessage);
+                }
+
+                const { estimate: poolUserEstimate, user: poolUser } =
+                  await this.sorobanHelper.loadUserPositionEstimate(poolId, user.user_id);
+                updateUser(this.db, pool, poolUser, poolUserEstimate);
+              } catch (e) {
+                logger.error(`Error refreshing user ${user.user_id} in pool ${user.pool_id}: ${e}`);
+              }
+            }
           } catch (e) {
-            logger.error(`Error refreshing user ${user.user_id} in pool ${user.pool_id}: ${e}`);
+            logger.error(`Error refreshing users in pool ${poolId}: ${e}`);
+            continue;
           }
         }
+
         break;
       }
       case EventType.CHECK_USER: {
