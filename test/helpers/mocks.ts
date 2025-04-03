@@ -1,4 +1,4 @@
-import { Pool, PoolOracle, PoolV1, PriceData, ReserveV1 } from '@blend-capital/blend-sdk';
+import { PoolOracle, PoolV1, PriceData, ReserveV1 } from '@blend-capital/blend-sdk';
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
