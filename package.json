@@ -1,6 +1,6 @@
 {
   "name": "auctioneer-bot",
-  "version": "0.2.2",
+  "version": "1.0.0-beta",
   "main": "index.js",
   "type": "module",
   "scripts": {
