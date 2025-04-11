@@ -9,11 +9,12 @@ import {
   PoolContract,
   PoolOracle,
   PoolUser,
-  PoolV1,
+  PoolV2,
   PositionsEstimate,
 } from '@blend-capital/blend-sdk';
 import {
   Account,
+  Address,
   BASE_FEE,
   Contract,
   Keypair,
@@ -75,7 +76,7 @@ export class SorobanHelper {
       if (cachedPool) {
         return cachedPool;
       }
-      let pool: Pool = await PoolV1.load(this.network, poolId);
+      let pool: Pool = await PoolV2.load(this.network, poolId);
       this.pool_cache.set(poolId, pool);
       return pool;
     } catch (e: any) {
@@ -195,6 +196,48 @@ export class SorobanHelper {
     }
   }
 
+  async loadAllowanceExpiration(tokenId: string, from: string, spender: string): Promise<number> {
+    try {
+      const stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
+      const res: xdr.ScVal[] = [
+        xdr.ScVal.scvSymbol('Allowance'),
+        xdr.ScVal.scvMap([
+          new xdr.ScMapEntry({
+            key: xdr.ScVal.scvSymbol('from'),
+            val: Address.fromString(from).toScVal(),
+          }),
+          new xdr.ScMapEntry({
+            key: xdr.ScVal.scvSymbol('spender'),
+            val: Address.fromString(spender).toScVal(),
+          }),
+        ]),
+      ];
+      const ledgerKey = xdr.LedgerKey.contractData(
+        new xdr.LedgerKeyContractData({
+          contract: Address.fromString(tokenId).toScAddress(),
+          key: xdr.ScVal.scvVec(res),
+          durability: xdr.ContractDataDurability.temporary(),
+        })
+      );
+      const ledgerData = await stellarRpc.getLedgerEntries(ledgerKey);
+      if (ledgerData.entries.length === 0) {
+        throw new Error('Allowance not found');
+      }
+      let expirationLedger = scValToNative(
+        ledgerData.entries[0].val.contractData().val()
+      ).expiration_ledger;
+      return expirationLedger;
+    } catch (e) {
+      logger.error(
+        `Error loading allowance expiration for tokenId: ${tokenId}\n` +
+          `from: ${from}\n` +
+          `spender: ${spender}\n` +
+          `Error: ${e}`
+      );
+      return 0;
+    }
+  }
+
   async simLPTokenToUSDC(backstopAddress: string, amount: bigint): Promise<bigint | undefined> {
     try {
       let comet = new Contract(APP_CONFIG.backstopTokenAddress);
@@ -232,6 +275,35 @@ export class SorobanHelper {
     try {
       let contract = new Contract(tokenId);
       let op = contract.call('balance', ...[nativeToScVal(userId, { type: 'address' })]);
+      let account = new Account(Keypair.random().publicKey(), '123');
+      let tx = new TransactionBuilder(account, {
+        networkPassphrase: this.network.passphrase,
+        fee: BASE_FEE,
+        timebounds: { minTime: 0, maxTime: Math.floor(Date.now() / 1000) + 5 * 60 * 1000 },
+      })
+        .addOperation(op)
+        .build();
+      let stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
+
+      let result = await stellarRpc.simulateTransaction(tx);
+      if (rpc.Api.isSimulationSuccess(result) && result.result?.retval) {
+        return scValToNative(result.result.retval);
+      } else {
+        return 0n;
+      }
+    } catch (e) {
+      logger.error(`Error fetching balance: ${e}`);
+      return 0n;
+    }
+  }
+
+  async simAllowance(tokenId: string, from: string, spender: string): Promise<bigint> {
+    try {
+      let contract = new Contract(tokenId);
+      let op = contract.call(
+        'allowance',
+        ...[nativeToScVal(from, { type: 'address' }), nativeToScVal(spender, { type: 'address' })]
+      );
       let account = new Account(Keypair.random().publicKey(), '123');
       let tx = new TransactionBuilder(account, {
         networkPassphrase: this.network.passphrase,

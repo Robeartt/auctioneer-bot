@@ -1,4 +1,4 @@
-import { BlendContractType, PoolEventType, PoolNewAuctionV1Event } from '@blend-capital/blend-sdk';
+import { BlendContractType, PoolEventType, PoolNewAuctionV2Event } from '@blend-capital/blend-sdk';
 import { EventType, PoolEventEvent } from '../../src/events.js';
 import { UserEntry } from '../../src/utils/db.js';
 import { parse, stringify } from '../../src/utils/json.js';
@@ -64,7 +64,7 @@ test('user entry parse round trip', () => {
 });
 
 test('blend event parse round trip', () => {
-  const blendEvent: PoolNewAuctionV1Event = {
+  const blendEvent: PoolNewAuctionV2Event = {
     id: 'abc',
     contractId: '123',
     contractType: BlendContractType.Pool,
@@ -72,6 +72,8 @@ test('blend event parse round trip', () => {
     ledgerClosedAt: Date.now().toLocaleString(),
     txHash: '0x123',
     eventType: PoolEventType.NewAuction,
+    user: 'user',
+    percent: 50,
     auctionType: 2,
     auctionData: {
       bid: new Map<string, bigint>([['C2', BigInt(123)]]),
@@ -108,6 +110,10 @@ test('blend event parse round trip', () => {
     expect(eventTest.event.txHash).toEqual(asObj.event.txHash);
     expect(eventTest.event.eventType).toEqual(asObj.event.eventType);
     expect(eventTest.event.auctionType).toEqual(asObj.event.auctionType);
+    if ('percent' in eventTest.event && 'percent' in asObj.event) {
+      expect(eventTest.event.user).toContain(asObj.event.user);
+      expect(eventTest.event.percent).toEqual(asObj.event.percent);
+    }
     expect(eventTest.event.auctionData.bid.size).toEqual(asObj.event.auctionData.bid.size);
     expect(eventTest.event.auctionData.bid.get('C2')).toEqual(
       asObj.event.auctionData.bid.get('C2')

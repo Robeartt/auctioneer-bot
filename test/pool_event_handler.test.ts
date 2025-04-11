@@ -1,4 +1,5 @@
 import {
+  AuctionData,
   BlendContractType,
   FixedMath,
   PoolEventType,
@@ -136,6 +137,8 @@ describe('poolEventHandler', () => {
           bid: new Map<string, bigint>(),
           lot: new Map<string, bigint>(),
         },
+        user: APP_CONFIG.backstopAddress,
+        percent: 100,
       },
     };
     await poolEventHandler.processEventWithRetryAndDeadLetter(poolEvent);
@@ -161,6 +164,8 @@ describe('poolEventHandler', () => {
           bid: new Map<string, bigint>(),
           lot: new Map<string, bigint>(),
         },
+        user: APP_CONFIG.backstopAddress,
+        percent: 100,
       },
     };
     let error = new Error('Temporary error');
@@ -193,6 +198,8 @@ describe('poolEventHandler', () => {
           bid: new Map<string, bigint>(),
           lot: new Map<string, bigint>(),
         },
+        user: APP_CONFIG.backstopAddress,
+        percent: 100,
       },
     };
     mockedSorobanHelper.loadPool.mockRejectedValue(new Error('Permanent error'));
@@ -220,6 +227,8 @@ describe('poolEventHandler', () => {
           bid: new Map<string, bigint>(),
           lot: new Map<string, bigint>(),
         },
+        user: APP_CONFIG.backstopAddress,
+        percent: 100,
       },
     };
 
@@ -353,13 +362,15 @@ describe('poolEventHandler', () => {
         ledger,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
         txHash: '0x123',
-        eventType: PoolEventType.NewLiquidationAuction,
+        eventType: PoolEventType.NewAuction,
         auctionData: {
           bid: new Map<string, bigint>([['ETH', BigInt(123)]]),
           lot: new Map<string, bigint>([['XLM', BigInt(456)]]),
           block: 500,
         },
         user: user,
+        auctionType: AuctionType.Liquidation,
+        percent: 100,
       },
     };
 
@@ -396,6 +407,8 @@ describe('poolEventHandler', () => {
           block: 500,
         },
         auctionType: AuctionType.Interest,
+        user: APP_CONFIG.backstopAddress,
+        percent: 100,
       },
     };
 
@@ -436,6 +449,8 @@ describe('poolEventHandler', () => {
           block: 500,
         },
         auctionType: AuctionType.BadDebt,
+        user: APP_CONFIG.backstopAddress,
+        percent: 100,
       },
     };
 
@@ -471,13 +486,15 @@ describe('poolEventHandler', () => {
         ledger,
         ledgerClosedAt: '2021-10-01T00:00:00Z',
         txHash: '0x123',
-        eventType: PoolEventType.NewLiquidationAuction,
+        eventType: PoolEventType.NewAuction,
         auctionData: {
           bid: new Map<string, bigint>([['ETH', BigInt(123)]]),
           lot: new Map<string, bigint>([['BTC', BigInt(456)]]),
           block: 500,
         },
         user: user,
+        auctionType: AuctionType.Liquidation,
+        percent: 100,
       },
     };
 
@@ -578,7 +595,8 @@ describe('poolEventHandler', () => {
         user: pool_user,
         auctionType: AuctionType.Liquidation,
         fillAmount: BigInt(99),
-        from: Keypair.random().publicKey(),
+        filler: Keypair.random().publicKey(),
+        filledAuctionData: new AuctionData(new Map(), 1, new Map()),
       },
     };
 
@@ -601,7 +619,8 @@ describe('poolEventHandler', () => {
         user: pool_user,
         auctionType: AuctionType.Liquidation,
         fillAmount: BigInt(100),
-        from: Keypair.random().publicKey(),
+        filler: Keypair.random().publicKey(),
+        filledAuctionData: new AuctionData(new Map(), 1, new Map()),
       },
     };
 
@@ -654,7 +673,8 @@ describe('poolEventHandler', () => {
         user: APP_CONFIG.backstopAddress,
         auctionType: AuctionType.Interest,
         fillAmount: BigInt(100),
-        from: Keypair.random().publicKey(),
+        filler: Keypair.random().publicKey(),
+        filledAuctionData: new AuctionData(new Map(), 1, new Map()),
       },
     };
 
@@ -721,7 +741,8 @@ describe('poolEventHandler', () => {
         user: APP_CONFIG.backstopAddress,
         auctionType: AuctionType.BadDebt,
         fillAmount: BigInt(100),
-        from: Keypair.random().publicKey(),
+        filler: Keypair.random().publicKey(),
+        filledAuctionData: new AuctionData(new Map(), 1, new Map()),
       },
     };
 

@@ -6,7 +6,8 @@ import { logger } from '../src/utils/logger';
 import { sendSlackNotification } from '../src/utils/slack_notifier';
 import { SorobanHelper } from '../src/utils/soroban_helper';
 import { WorkSubmission, WorkSubmissionType, WorkSubmitter } from '../src/work_submitter';
-import { mockPool, USDC } from './helpers/mocks';
+import { mockPool } from './helpers/mocks';
+import { serializeError, stringify } from '../src/utils/json';
 
 // Mock dependencies
 jest.mock('../src/utils/db');
@@ -45,11 +46,14 @@ describe('WorkSubmitter', () => {
   it('should submit a user liquidation successfully', async () => {
     mockedSorobanHelper.loadAuction.mockResolvedValue(undefined);
 
-    const submission = {
-      type: WorkSubmissionType.LiquidateUser,
+    const submission: WorkSubmission = {
+      type: WorkSubmissionType.AuctionCreation,
       poolId: mockPool.id,
       user: Keypair.random().publicKey(),
-      liquidationPercent: BigInt(50),
+      auctionType: AuctionType.Liquidation,
+      lot: [],
+      bid: [],
+      auctionPercent: 50,
     };
 
     const result = await workSubmitter.submit(submission);
@@ -72,11 +76,14 @@ describe('WorkSubmitter', () => {
       })
     );
 
-    const submission = {
-      type: WorkSubmissionType.LiquidateUser,
+    const submission: WorkSubmission = {
+      type: WorkSubmissionType.AuctionCreation,
       poolId: mockPool.id,
       user: Keypair.random().publicKey(),
-      liquidationPercent: BigInt(50),
+      auctionType: AuctionType.Liquidation,
+      lot: [],
+      bid: [],
+      auctionPercent: 50,
     };
 
     const result = await workSubmitter.submit(submission);
@@ -92,18 +99,19 @@ describe('WorkSubmitter', () => {
       new ContractError(ContractErrorType.InvalidLiqTooSmall)
     );
 
-    const submission = {
-      type: WorkSubmissionType.LiquidateUser,
+    const submission: WorkSubmission = {
+      type: WorkSubmissionType.AuctionCreation,
       poolId: mockPool.id,
       user: Keypair.random().publicKey(),
-      liquidationPercent: BigInt(50),
+      auctionType: AuctionType.Liquidation,
+      auctionPercent: 50,
       lot: [],
       bid: [],
     };
 
     const result = await workSubmitter.submit(submission);
     expect(result).toBe(false);
-    expect(submission.liquidationPercent).toBe(BigInt(51));
+    expect(submission.auctionPercent).toBe(51);
     expect(logger.error).toHaveBeenCalled();
     expect(mockedSendSlackNotif).toHaveBeenCalled();
   });
@@ -114,16 +122,19 @@ describe('WorkSubmitter', () => {
       new ContractError(ContractErrorType.InvalidLiqTooSmall)
     );
 
-    const submission = {
-      type: WorkSubmissionType.LiquidateUser,
+    const submission: WorkSubmission = {
+      type: WorkSubmissionType.AuctionCreation,
       poolId: mockPool.id,
       user: Keypair.random().publicKey(),
-      liquidationPercent: BigInt(100),
+      auctionType: AuctionType.Liquidation,
+      auctionPercent: 100,
+      lot: [],
+      bid: [],
     };
 
     const result = await workSubmitter.submit(submission);
     expect(result).toBe(false);
-    expect(submission.liquidationPercent).toBe(BigInt(100));
+    expect(submission.auctionPercent).toBe(100);
     expect(logger.error).toHaveBeenCalled();
     expect(mockedSendSlackNotif).toHaveBeenCalled();
   });
@@ -134,36 +145,42 @@ describe('WorkSubmitter', () => {
       new ContractError(ContractErrorType.InvalidLiqTooLarge)
     );
 
-    const submission = {
-      type: WorkSubmissionType.LiquidateUser,
+    const submission: WorkSubmission = {
+      type: WorkSubmissionType.AuctionCreation,
       poolId: mockPool.id,
       user: Keypair.random().publicKey(),
-      liquidationPercent: BigInt(50),
+      auctionType: AuctionType.Liquidation,
+      auctionPercent: 50,
+      lot: [],
+      bid: [],
     };
 
     const result = await workSubmitter.submit(submission);
     expect(result).toBe(false);
-    expect(submission.liquidationPercent).toBe(BigInt(49));
+    expect(submission.auctionPercent).toBe(49);
     expect(logger.error).toHaveBeenCalled();
     expect(mockedSendSlackNotif).toHaveBeenCalled();
   });
 
-  it('does not increase fill percentage past below 1 for user liquidation with error LIQ_TOO_LARGE', async () => {
+  it('does not decrease fill percentage past below 1 for user liquidation with error LIQ_TOO_LARGE', async () => {
     mockedSorobanHelper.loadAuction.mockResolvedValue(undefined);
     mockedSorobanHelper.submitTransaction.mockRejectedValue(
       new ContractError(ContractErrorType.InvalidLiqTooLarge)
     );
 
-    const submission = {
-      type: WorkSubmissionType.LiquidateUser,
+    const submission: WorkSubmission = {
+      type: WorkSubmissionType.AuctionCreation,
       poolId: mockPool.id,
       user: Keypair.random().publicKey(),
-      liquidationPercent: BigInt(1),
+      auctionType: AuctionType.Liquidation,
+      auctionPercent: 1,
+      lot: [],
+      bid: [],
     };
 
     const result = await workSubmitter.submit(submission);
     expect(result).toBe(false);
-    expect(submission.liquidationPercent).toBe(BigInt(1));
+    expect(submission.auctionPercent).toBe(1);
     expect(logger.error).toHaveBeenCalled();
     expect(mockedSendSlackNotif).toHaveBeenCalled();
   });
@@ -174,16 +191,19 @@ describe('WorkSubmitter', () => {
       new ContractError(ContractErrorType.InvalidLiquidation)
     );
 
-    const submission = {
-      type: WorkSubmissionType.LiquidateUser,
+    const submission: WorkSubmission = {
+      type: WorkSubmissionType.AuctionCreation,
       poolId: mockPool.id,
       user: Keypair.random().publicKey(),
-      liquidationPercent: BigInt(50),
+      auctionType: AuctionType.Liquidation,
+      auctionPercent: 50,
+      lot: [],
+      bid: [],
     };
 
     const result = await workSubmitter.submit(submission);
     expect(result).toBe(false);
-    expect(submission.liquidationPercent).toBe(BigInt(50));
+    expect(submission.auctionPercent).toBe(50);
     expect(logger.error).toHaveBeenCalled();
     expect(mockedSendSlackNotif).toHaveBeenCalled();
   });
@@ -194,11 +214,14 @@ describe('WorkSubmitter', () => {
       new ContractError(ContractErrorType.InvalidLiqTooSmall)
     );
 
-    const submission = {
-      type: WorkSubmissionType.LiquidateUser,
+    const submission: WorkSubmission = {
+      type: WorkSubmissionType.AuctionCreation,
       poolId: mockPool.id,
       user: Keypair.random().publicKey(),
-      liquidationPercent: BigInt(50),
+      auctionType: AuctionType.Liquidation,
+      auctionPercent: 50,
+      lot: [],
+      bid: [],
     };
 
     workSubmitter.addSubmission(submission, 3, 0);
@@ -206,10 +229,17 @@ describe('WorkSubmitter', () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     // 3 retries plus the final increment before dropping
-    expect(submission.liquidationPercent).toBe(BigInt(54));
+    expect(submission.auctionPercent).toBe(54);
     expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining(
-        'Error creating user liquidation\n' + `Pool: ${mockPool.id}\n` + `User: ${submission.user}`
+        'Error creating auction\n' +
+          `Auction Type: ${AuctionType[submission.auctionType]}\n` +
+          `Pool: ${mockPool.id}\n` +
+          `User: ${submission.user}\n` +
+          `Auction Percent: ${submission.auctionPercent}\n` +
+          `Bid: ${stringify(submission.bid)}\n` +
+          `Lot: ${stringify(submission.lot)}\n` +
+          `Error: ${stringify(serializeError(new ContractError(ContractErrorType.InvalidLiqTooSmall)))}\n`
       )
     );
   });
@@ -232,8 +262,13 @@ describe('WorkSubmitter', () => {
     mockedSorobanHelper.loadAuction.mockResolvedValue(undefined);
 
     const submission: WorkSubmission = {
-      type: WorkSubmissionType.BadDebtAuction,
+      type: WorkSubmissionType.AuctionCreation,
       poolId: mockPool.id,
+      user: Keypair.random().publicKey(),
+      auctionType: AuctionType.BadDebt,
+      auctionPercent: 50,
+      lot: [],
+      bid: [],
     };
     const result = await workSubmitter.submit(submission);
 
@@ -253,8 +288,13 @@ describe('WorkSubmitter', () => {
     );
 
     const submission: WorkSubmission = {
-      type: WorkSubmissionType.BadDebtAuction,
+      type: WorkSubmissionType.AuctionCreation,
       poolId: mockPool.id,
+      user: Keypair.random().publicKey(),
+      auctionType: AuctionType.BadDebt,
+      auctionPercent: 50,
+      lot: [],
+      bid: [],
     };
     const result = await workSubmitter.submit(submission);
 
@@ -264,11 +304,12 @@ describe('WorkSubmitter', () => {
   });
 
   it('should log an error when a liquidation is dropped', () => {
-    const submission = {
-      type: WorkSubmissionType.LiquidateUser,
+    const submission: WorkSubmission = {
+      type: WorkSubmissionType.AuctionCreation,
       poolId: mockPool.id,
       user: Keypair.random().publicKey(),
-      liquidationPercent: BigInt(50),
+      auctionType: AuctionType.Liquidation,
+      auctionPercent: 50,
       lot: [],
       bid: [],
     };
@@ -276,7 +317,10 @@ describe('WorkSubmitter', () => {
 
     expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining(
-        'Dropped liquidation\n' + `pool: ${mockPool.id}\n` + `user: ${submission.user}`
+        'Dropped auction creation\n' +
+          `pool: ${mockPool.id}\n` +
+          `Auction Type: ${submission.auctionType}\n` +
+          `user: ${submission.user}`
       )
     );
   });
@@ -299,14 +343,23 @@ describe('WorkSubmitter', () => {
 
   it('should log an error when a bad debt auction is dropped', () => {
     const submission: WorkSubmission = {
-      type: WorkSubmissionType.BadDebtAuction,
+      type: WorkSubmissionType.AuctionCreation,
       poolId: mockPool.id,
+      user: Keypair.random().publicKey(),
+      auctionType: AuctionType.Liquidation,
+      auctionPercent: 50,
+      lot: [],
+      bid: [],
     };
-
     workSubmitter.onDrop(submission);
 
     expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('Dropped bad debt auction\n' + `pool: ${mockPool.id}`)
+      expect.stringContaining(
+        'Dropped auction creation\n' +
+          `pool: ${mockPool.id}\n` +
+          `Auction Type: ${submission.auctionType}\n` +
+          `user: ${submission.user}`
+      )
     );
   });
 });

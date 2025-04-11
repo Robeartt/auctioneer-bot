@@ -1,4 +1,10 @@
-import { Auction, PoolUser, Positions, PositionsEstimate } from '@blend-capital/blend-sdk';
+import {
+  Auction,
+  AuctionType,
+  PoolUser,
+  Positions,
+  PositionsEstimate,
+} from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import {
   calculateLiquidationPercent,
@@ -11,7 +17,18 @@ import { APP_CONFIG } from '../src/utils/config.js';
 import { AuctioneerDatabase } from '../src/utils/db.js';
 import { PoolUserEst, SorobanHelper } from '../src/utils/soroban_helper.js';
 import { WorkSubmissionType } from '../src/work_submitter.js';
-import { inMemoryAuctioneerDb, mockPool, USDC, USDC_ID, XLM_ID } from './helpers/mocks.js';
+import {
+  AQUA_ID,
+  EURC,
+  EURC_ID,
+  inMemoryAuctioneerDb,
+  mockPool,
+  mockPoolOracle,
+  USDC,
+  USDC_ID,
+  XLM,
+  XLM_ID,
+} from './helpers/mocks.js';
 
 jest.mock('../src/utils/soroban_helper.js');
 jest.mock('../src/utils/logger.js', () => ({
@@ -24,6 +41,7 @@ jest.mock('../src/utils/config.js', () => {
   return {
     APP_CONFIG: {
       backstopAddress: 'backstopAddress',
+      backstopTokenAddress: 'backstopTokenAddress',
       pools: ['pool1', 'pool2'],
     },
   };
@@ -300,7 +318,7 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
     mockBackstopPositionsEstimate.totalEffectiveCollateral = 0;
     mockBackstopPositions.positions = new Positions(
       new Map([[USDC_ID, 2000n]]),
-      new Map([[XLM_ID, 3000n]]),
+      new Map(),
       new Map()
     );
     mockedSorobanHelper.loadUserPositionEstimate.mockResolvedValue({
@@ -318,8 +336,13 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
 
     expect(result).toEqual([
       {
-        type: WorkSubmissionType.BadDebtAuction,
+        type: WorkSubmissionType.AuctionCreation,
         poolId: mockPool.id,
+        user: APP_CONFIG.backstopAddress,
+        auctionType: AuctionType.BadDebt,
+        bid: [USDC],
+        lot: [APP_CONFIG.backstopTokenAddress],
+        auctionPercent: 100,
       },
     ]);
   });
@@ -352,10 +375,13 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
     expect(result.length).toBe(1);
     expect(result).toEqual([
       {
-        type: WorkSubmissionType.LiquidateUser,
+        type: WorkSubmissionType.AuctionCreation,
         poolId: mockPool.id,
+        auctionType: AuctionType.Liquidation,
         user: 'user1',
-        liquidationPercent: 56n,
+        auctionPercent: 56,
+        bid: [USDC],
+        lot: [XLM],
       },
     ]);
   });

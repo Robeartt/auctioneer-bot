@@ -1,4 +1,4 @@
-import { PositionsEstimate } from '@blend-capital/blend-sdk';
+import { Pool, PoolOracle, Positions, PositionsEstimate } from '@blend-capital/blend-sdk';
 import { updateUser } from './user.js';
 import { APP_CONFIG } from './utils/config.js';
 import { AuctioneerDatabase, AuctionType } from './utils/db.js';
@@ -40,15 +40,17 @@ export function isBadDebt(user: PositionsEstimate): boolean {
  * @param user - The positions estimate of the user
  * @returns The liquidation percent
  */
-export function calculateLiquidationPercent(user: PositionsEstimate): bigint {
+export function calculateLiquidationPercent(user: PositionsEstimate): number {
   const avgInverseLF = user.totalEffectiveLiabilities / user.totalBorrowed;
   const avgCF = user.totalEffectiveCollateral / user.totalSupplied;
   const estIncentive = 1 + (1 - avgCF / avgInverseLF) / 2;
   const numerator = user.totalEffectiveLiabilities * 1.06 - user.totalEffectiveCollateral;
   const denominator = avgInverseLF * 1.06 - avgCF * estIncentive;
-  const liqPercent = BigInt(
-    Math.min(Math.round((numerator / denominator / user.totalBorrowed) * 100), 100)
+  const liqPercent = Math.min(
+    Math.round((numerator / denominator / user.totalBorrowed) * 100),
+    100
   );
+
   logger.info(
     `Calculated liquidation percent ${liqPercent} with est incentive ${estIncentive} numerator ${numerator} and denominator ${denominator} for user ${user}.`
   );
@@ -112,8 +114,15 @@ export async function checkUsersForLiquidationsAndBadDebt(
           (await sorobanHelper.loadAuction(poolId, user, AuctionType.BadDebt)) === undefined
         ) {
           submissions.push({
-            type: WorkSubmissionType.BadDebtAuction,
+            type: WorkSubmissionType.AuctionCreation,
             poolId,
+            user: APP_CONFIG.backstopAddress,
+            auctionType: AuctionType.BadDebt,
+            auctionPercent: 100,
+            bid: Array.from(backstop.positions.liabilities.keys()).map(
+              (index) => pool.metadata.reserveList[index]
+            ),
+            lot: [APP_CONFIG.backstopTokenAddress],
           });
         }
       } else if (
@@ -123,12 +132,19 @@ export async function checkUsersForLiquidationsAndBadDebt(
           await sorobanHelper.loadUserPositionEstimate(poolId, user);
         updateUser(db, pool, poolUser, poolUserEstimate);
         if (isLiquidatable(poolUserEstimate)) {
-          const liquidationPercent = calculateLiquidationPercent(poolUserEstimate);
+          const auctionPercent = calculateLiquidationPercent(poolUserEstimate);
           submissions.push({
-            type: WorkSubmissionType.LiquidateUser,
+            type: WorkSubmissionType.AuctionCreation,
             poolId,
-            user: user,
-            liquidationPercent: liquidationPercent,
+            user,
+            auctionPercent,
+            auctionType: AuctionType.Liquidation,
+            bid: Array.from(poolUser.positions.liabilities.keys()).map(
+              (index) => pool.metadata.reserveList[index]
+            ),
+            lot: Array.from(poolUser.positions.collateral.keys()).map(
+              (index) => pool.metadata.reserveList[index]
+            ),
           });
         } else if (isBadDebt(poolUserEstimate)) {
           submissions.push({

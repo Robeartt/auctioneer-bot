@@ -2,7 +2,12 @@ import { Auction } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import { AuctionFill, calculateAuctionFill } from '../src/auction';
 import { BidderHandler } from '../src/bidder_handler';
-import { AuctionBid, BidderSubmissionType, BidderSubmitter } from '../src/bidder_submitter';
+import {
+  AddAllowance,
+  AuctionBid,
+  BidderSubmissionType,
+  BidderSubmitter,
+} from '../src/bidder_submitter';
 import { AppEvent, EventType, LedgerEvent } from '../src/events';
 import { APP_CONFIG, AppConfig } from '../src/utils/config';
 import { AuctioneerDatabase, AuctionEntry, AuctionType } from '../src/utils/db';
@@ -20,6 +25,8 @@ jest.mock('../src/utils/logger.js', () => ({
 }));
 jest.mock('../src/utils/config.js', () => {
   let config: AppConfig = {
+    backstopAddress: 'backstopAddress',
+    backstopTokenAddress: 'backstopTokenAddress',
     fillers: [
       {
         name: 'filler1',
@@ -475,5 +482,60 @@ describe('BidderHandler', () => {
     expect(new_auction_1?.updated).toEqual(auction_1.updated);
     expect(logger.error).toHaveBeenCalledTimes(1);
     expect(mockedSorobanHelper.loadAuction).not.toHaveBeenCalled();
+  });
+
+  it('Checks for allowance if interest auction', async () => {
+    let ledger = 1000; // nextLedger is 1001
+    let auction_1: AuctionEntry = {
+      pool_id: 'pool1',
+      user_id: APP_CONFIG.backstopAddress,
+      auction_type: AuctionType.Interest,
+      filler: APP_CONFIG.fillers[0].keypair.publicKey(),
+      start_block: ledger - 150,
+      fill_block: ledger + 3,
+      updated: ledger - 1,
+    };
+
+    db.setAuctionEntry(auction_1);
+    mockedSorobanHelper.loadAuction.mockResolvedValue(
+      new Auction('teapot', AuctionType.Interest, {
+        bid: new Map<string, bigint>(),
+        lot: new Map<string, bigint>(),
+        block: ledger - 1,
+      })
+    );
+
+    let fill_calc_1: AuctionFill = {
+      block: 1001,
+      percent: 50,
+      lotValue: 1000,
+      bidValue: 900,
+      requests: [],
+    };
+    mockedCalcAuctionFill.mockResolvedValueOnce(fill_calc_1);
+
+    const appEvent: AppEvent = {
+      type: EventType.LEDGER,
+      ledger,
+    } as LedgerEvent;
+    await bidderHandler.processEvent(appEvent);
+
+    // validate auction 1 is placed on submission queue
+    let new_auction_1 = db.getAuctionEntry(
+      auction_1.pool_id,
+      auction_1.user_id,
+      auction_1.auction_type
+    );
+    expect(new_auction_1?.fill_block).toEqual(fill_calc_1.block);
+    expect(new_auction_1?.updated).toEqual(ledger);
+
+    let submission_1: AddAllowance = {
+      filler: APP_CONFIG.fillers[0],
+      type: BidderSubmissionType.ADD_ALLOWANCE,
+      assetId: APP_CONFIG.backstopTokenAddress,
+      spender: APP_CONFIG.backstopAddress,
+      currLedger: appEvent.ledger,
+    };
+    expect(mockedBidderSubmitter.addSubmission).toHaveBeenCalledWith(submission_1, 1);
   });
 });

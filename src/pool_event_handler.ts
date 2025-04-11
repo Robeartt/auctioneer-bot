@@ -1,4 +1,4 @@
-import { PoolEventType, PoolFillAuctionV1Event } from '@blend-capital/blend-sdk';
+import { PoolEventType } from '@blend-capital/blend-sdk';
 import { ChildProcess } from 'child_process';
 import { EventType, PoolEventEvent } from './events.js';
 import { canFillerBid } from './filler.js';
@@ -78,6 +78,7 @@ export class PoolEventHandler {
       case PoolEventType.SupplyCollateral:
       case PoolEventType.WithdrawCollateral:
       case PoolEventType.Borrow:
+      case PoolEventType.FlashLoan:
       case PoolEventType.Repay: {
         // update the user in the db
         const { estimate: userPositionsEstimate, user } =
@@ -85,24 +86,8 @@ export class PoolEventHandler {
         updateUser(this.db, pool, user, userPositionsEstimate, poolEvent.event.ledger);
         break;
       }
-      case PoolEventType.NewLiquidationAuction:
+
       case PoolEventType.NewAuction: {
-        let auction_type: AuctionType;
-        if ('auctionType' in poolEvent.event) {
-          auction_type = poolEvent.event.auctionType;
-        } else {
-          // New liquidation auction events do not have an auction type
-          auction_type = AuctionType.Liquidation;
-        }
-
-        let user: string;
-
-        // V1 interest auctions and bad debt auctions have no user
-        if ('user' in poolEvent.event) {
-          user = poolEvent.event.user;
-        } else {
-          user = APP_CONFIG.backstopAddress;
-        }
         // check if the auction should be bid on by an auctioneer
         let fillerFound = false;
         for (const filler of APP_CONFIG.fillers) {
@@ -112,8 +97,8 @@ export class PoolEventHandler {
           }
           let auctionEntry: AuctionEntry = {
             pool_id: poolId,
-            user_id: user,
-            auction_type: auction_type,
+            user_id: poolEvent.event.user,
+            auction_type: poolEvent.event.auctionType,
             filler: filler.keypair.publicKey(),
             start_block: poolEvent.event.auctionData.block,
             fill_block: 0,
@@ -123,10 +108,10 @@ export class PoolEventHandler {
 
           const logMessage =
             `New auction\n` +
-            `Type: ${AuctionType[auction_type]}\n` +
+            `Type: ${AuctionType[poolEvent.event.auctionType]}\n` +
             `Filler: ${filler.name}\n` +
             `Pool: ${poolId}\n` +
-            `User: ${user}\n` +
+            `User: ${poolEvent.event.user}\n` +
             `Auction Data: ${stringify(poolEvent.event.auctionData, 2)}\n`;
           await sendSlackNotification(logMessage);
           logger.info(logMessage);
@@ -136,9 +121,9 @@ export class PoolEventHandler {
         if (!fillerFound) {
           const logMessage =
             `Auction Ignored\n` +
-            `Type: ${AuctionType[auction_type]}\n` +
+            `Type: ${AuctionType[poolEvent.event.auctionType]}\n` +
             `Pool: ${poolId}\n` +
-            `User: ${user}\n` +
+            `User: ${poolEvent.event.user}\n` +
             `Auction Data: ${stringify(poolEvent.event.auctionData, 2)}\n`;
           await sendSlackNotification(logMessage);
           logger.info(logMessage);
@@ -163,7 +148,7 @@ export class PoolEventHandler {
         break;
       }
       case PoolEventType.FillAuction: {
-        const fillerAddress = (poolEvent.event as PoolFillAuctionV1Event).from;
+        const fillerAddress = poolEvent.event.filler;
         const logMessage =
           `Auction Fill Event\n` +
           `Type ${AuctionType[poolEvent.event.auctionType]}\n` +
@@ -223,6 +208,20 @@ export class PoolEventHandler {
           userId: APP_CONFIG.backstopAddress,
         });
         break;
+      }
+      case PoolEventType.DeleteAuction: {
+        const user = poolEvent.event.user;
+        const auctionType = poolEvent.event.auctionType;
+        let runResult = this.db.deleteAuctionEntry(poolId, user, auctionType);
+        if (runResult.changes !== 0) {
+          const logMessage =
+            `Stale Auction Deleted\n` +
+            `Type: ${AuctionType[auctionType]}\n` +
+            `Pool: ${poolId}\n` +
+            `User: ${user}`;
+          await sendSlackNotification(logMessage);
+          logger.info(logMessage);
+        }
       }
       default: {
         logger.error(`Unhandled event type: ${poolEvent.event.eventType}`);

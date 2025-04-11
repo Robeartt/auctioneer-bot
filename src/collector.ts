@@ -1,4 +1,4 @@
-import { poolEventFromEventResponse } from '@blend-capital/blend-sdk';
+import { poolEventV2FromEventResponse } from '@blend-capital/blend-sdk';
 import { rpc } from '@stellar/stellar-sdk';
 import { ChildProcess } from 'child_process';
 import {
@@ -125,7 +125,7 @@ export async function runCollector(
     let cursor = '';
     while (events.events.length > 0) {
       for (const raw_event of events.events) {
-        let blendPoolEvent = poolEventFromEventResponse(raw_event);
+        let blendPoolEvent = poolEventV2FromEventResponse(raw_event);
         if (blendPoolEvent) {
           // handle pool events immediately
           let poolEvent: PoolEventEvent = {

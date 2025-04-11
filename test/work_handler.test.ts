@@ -2,7 +2,7 @@ import { PoolOracle } from '@blend-capital/blend-sdk';
 import { AppEvent, EventType, OracleScanEvent } from '../src/events';
 import { checkUsersForLiquidationsAndBadDebt } from '../src/liquidations';
 import { OracleHistory } from '../src/oracle_history';
-import { AuctioneerDatabase, UserEntry } from '../src/utils/db';
+import { AuctioneerDatabase, AuctionType, UserEntry } from '../src/utils/db';
 import { SorobanHelper } from '../src/utils/soroban_helper';
 import { WorkHandler } from '../src/work_handler';
 import { WorkSubmission, WorkSubmissionType, WorkSubmitter } from '../src/work_submitter';
@@ -71,7 +71,7 @@ describe('WorkHandler', () => {
     ];
     const usersWithCollateral: UserEntry[] = [
       {
-        pool_id: 'pool1',
+        pool_id: 'pool2',
         user_id: 'user1',
         health_factor: 0,
         collateral: new Map([['asset2', BigInt(100)]]),
@@ -83,14 +83,20 @@ describe('WorkHandler', () => {
       {
         poolId: APP_CONFIG.pools[0],
         user: 'user1',
-        type: WorkSubmissionType.LiquidateUser,
-        liquidationPercent: 10n,
+        type: WorkSubmissionType.AuctionCreation,
+        auctionType: AuctionType.Liquidation,
+        bid: ['asset1'],
+        lot: ['asset2'],
+        auctionPercent: 10,
       },
       {
-        poolId: APP_CONFIG.pools[0],
+        poolId: APP_CONFIG.pools[1],
         user: 'user1',
-        type: WorkSubmissionType.LiquidateUser,
-        liquidationPercent: 10n,
+        type: WorkSubmissionType.AuctionCreation,
+        auctionType: AuctionType.Liquidation,
+        bid: ['asset1'],
+        lot: ['asset2'],
+        auctionPercent: 10,
       },
     ];
     sorobanHelper.loadPoolOracle.mockResolvedValue(poolOracle);
