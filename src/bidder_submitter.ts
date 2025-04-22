@@ -286,20 +286,14 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
     allowance: AddAllowance
   ): Promise<boolean> {
     try {
-      const amount = await sorobanHelper.simAllowance(
+      const allowanceData = await sorobanHelper.loadAllowance(
         allowance.assetId,
         allowance.filler.keypair.publicKey(),
         allowance.spender
       );
-      const expiration = await sorobanHelper.loadAllowanceExpiration(
-        allowance.assetId,
-        allowance.filler.keypair.publicKey(),
-        allowance.spender
-      );
-      // Check if the allowance is less than u64 max
       if (
-        amount < BigInt('18446744073709551615') / BigInt(2) ||
-        expiration < allowance.currLedger + 17368 * 7
+        allowanceData.amount < BigInt(100_000e7) ||
+        allowanceData.expiration_ledger < allowance.currLedger + 17368 * 7
       ) {
         const assetContract = new Contract(allowance.assetId);
         const op = assetContract

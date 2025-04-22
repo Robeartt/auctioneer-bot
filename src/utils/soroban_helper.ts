@@ -196,7 +196,11 @@ export class SorobanHelper {
     }
   }
 
-  async loadAllowanceExpiration(tokenId: string, from: string, spender: string): Promise<number> {
+  async loadAllowance(
+    tokenId: string,
+    from: string,
+    spender: string
+  ): Promise<{ expiration_ledger: number; amount: bigint }> {
     try {
       const stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
       const res: xdr.ScVal[] = [
@@ -220,13 +224,24 @@ export class SorobanHelper {
         })
       );
       const ledgerData = await stellarRpc.getLedgerEntries(ledgerKey);
-      if (ledgerData.entries.length === 0) {
-        throw new Error('Allowance not found');
+
+      if (ledgerData.entries.length !== 1) {
+        return {
+          expiration_ledger: 0,
+          amount: 0n,
+        };
       }
-      let expirationLedger = scValToNative(
-        ledgerData.entries[0].val.contractData().val()
-      ).expiration_ledger;
-      return expirationLedger;
+      let allowance = scValToNative(ledgerData.entries[0].val.contractData().val());
+
+      if (
+        allowance === undefined ||
+        allowance.expiration_ledger === undefined ||
+        allowance.amount === undefined
+      ) {
+        throw new Error('Invalid allowance data');
+      }
+
+      return allowance;
     } catch (e) {
       logger.error(
         `Error loading allowance expiration for tokenId: ${tokenId}\n` +
@@ -234,7 +249,7 @@ export class SorobanHelper {
           `spender: ${spender}\n` +
           `Error: ${e}`
       );
-      return 0;
+      throw e;
     }
   }
 
@@ -275,35 +290,6 @@ export class SorobanHelper {
     try {
       let contract = new Contract(tokenId);
       let op = contract.call('balance', ...[nativeToScVal(userId, { type: 'address' })]);
-      let account = new Account(Keypair.random().publicKey(), '123');
-      let tx = new TransactionBuilder(account, {
-        networkPassphrase: this.network.passphrase,
-        fee: BASE_FEE,
-        timebounds: { minTime: 0, maxTime: Math.floor(Date.now() / 1000) + 5 * 60 * 1000 },
-      })
-        .addOperation(op)
-        .build();
-      let stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
-
-      let result = await stellarRpc.simulateTransaction(tx);
-      if (rpc.Api.isSimulationSuccess(result) && result.result?.retval) {
-        return scValToNative(result.result.retval);
-      } else {
-        return 0n;
-      }
-    } catch (e) {
-      logger.error(`Error fetching balance: ${e}`);
-      return 0n;
-    }
-  }
-
-  async simAllowance(tokenId: string, from: string, spender: string): Promise<bigint> {
-    try {
-      let contract = new Contract(tokenId);
-      let op = contract.call(
-        'allowance',
-        ...[nativeToScVal(from, { type: 'address' }), nativeToScVal(spender, { type: 'address' })]
-      );
       let account = new Account(Keypair.random().publicKey(), '123');
       let tx = new TransactionBuilder(account, {
         networkPassphrase: this.network.passphrase,

@@ -144,14 +144,8 @@ export class WorkHandler {
 
             for (const user of oldUsers) {
               try {
-                if (!poolId) {
-                  if (user.updated < appEvent.cutoff) {
-                    this.db.deleteUserEntry(user.pool_id, user.user_id);
-                    logger.warn(`User found in unsupported pool. Deleting user.`);
-                  }
-                  continue;
-                }
-                if (user.updated < appEvent.cutoff) {
+                // Send alert and log if user has not been updated in 1 month
+                if (user.updated < Math.max(appEvent.cutoff - 17280 * 14, 0)) {
                   const logMessage =
                     `Warning user has not been updated since ledger ${appEvent.cutoff}\n` +
                     `Pool: ${poolId}\n` +
