@@ -224,8 +224,12 @@ export class SorobanHelper {
         })
       );
       const ledgerData = await stellarRpc.getLedgerEntries(ledgerKey);
+
       if (ledgerData.entries.length !== 1) {
-        throw new Error('Allowance not found');
+        return {
+          expiration_ledger: 0,
+          amount: 0n,
+        };
       }
       let allowance = scValToNative(ledgerData.entries[0].val.contractData().val());
 
