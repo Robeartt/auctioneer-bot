@@ -8,7 +8,6 @@ export enum EventType {
   POOL_EVENT = 'pool_event',
   USER_REFRESH = 'user_refresh',
   CHECK_USER = 'check_user',
-  CHECK_ALLOWANCES = 'check_allowances',
 }
 
 // ********* Shared **********
