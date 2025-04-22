@@ -144,7 +144,8 @@ export class WorkHandler {
 
             for (const user of oldUsers) {
               try {
-                if (user.updated < appEvent.cutoff - 14 * 17280) {
+                // Send alert and log if user has not been updated in 1 month
+                if (user.updated < Math.max(appEvent.cutoff - 17280 * 14, 0)) {
                   const logMessage =
                     `Warning user has not been updated since ledger ${appEvent.cutoff}\n` +
                     `Pool: ${poolId}\n` +
