@@ -492,8 +492,8 @@ describe('BidderHandler', () => {
       auction_type: AuctionType.Interest,
       filler: APP_CONFIG.fillers[0].keypair.publicKey(),
       start_block: ledger - 150,
-      fill_block: ledger + 3,
-      updated: ledger - 1,
+      fill_block: 0,
+      updated: 0,
     };
 
     db.setAuctionEntry(auction_1);
@@ -520,7 +520,6 @@ describe('BidderHandler', () => {
     } as LedgerEvent;
     await bidderHandler.processEvent(appEvent);
 
-    // validate auction 1 is placed on submission queue
     let new_auction_1 = db.getAuctionEntry(
       auction_1.pool_id,
       auction_1.user_id,
@@ -536,6 +535,6 @@ describe('BidderHandler', () => {
       spender: APP_CONFIG.backstopAddress,
       currLedger: appEvent.ledger,
     };
-    expect(mockedBidderSubmitter.addSubmission).toHaveBeenCalledWith(submission_1, 1);
+    expect(mockedBidderSubmitter.addSubmission).toHaveBeenCalledWith(submission_1, 4);
   });
 });

@@ -342,10 +342,10 @@ describe('BidderSubmitter', () => {
 
   it('add allowance checks if amount is below threshold', async () => {
     bidderSubmitter.addSubmission = jest.fn();
-    mockedSorobanHelper.simAllowance.mockResolvedValue(
-      BigInt('18446744073709551615') / BigInt(2) - 1n
-    );
-    mockedSorobanHelper.loadAllowanceExpiration.mockResolvedValue(1000 + 17368 * 7);
+    mockedSorobanHelper.loadAllowance.mockResolvedValue({
+      amount: BigInt(100000e7 - 1),
+      expiration_ledger: 1000 + 17368 * 7,
+    });
 
     const submission: AddAllowance = {
       type: BidderSubmissionType.ADD_ALLOWANCE,
@@ -377,8 +377,10 @@ describe('BidderSubmitter', () => {
   });
   it('add allowance checks if expiration is below threshold', async () => {
     bidderSubmitter.addSubmission = jest.fn();
-    mockedSorobanHelper.simAllowance.mockResolvedValue(BigInt('18446744073709551615'));
-    mockedSorobanHelper.loadAllowanceExpiration.mockResolvedValue(1000 + 17368 * 7 - 1);
+    mockedSorobanHelper.loadAllowance.mockResolvedValue({
+      amount: BigInt('18446744073709551615'),
+      expiration_ledger: 1000 + 17368 * 7 - 1,
+    });
 
     const submission: AddAllowance = {
       type: BidderSubmissionType.ADD_ALLOWANCE,
@@ -411,8 +413,10 @@ describe('BidderSubmitter', () => {
 
   it('add allowance valid allowance no action taken', async () => {
     bidderSubmitter.addSubmission = jest.fn();
-    mockedSorobanHelper.simAllowance.mockResolvedValue(BigInt('18446744073709551615'));
-    mockedSorobanHelper.loadAllowanceExpiration.mockResolvedValue(1000 + 17368 * 7);
+    mockedSorobanHelper.loadAllowance.mockResolvedValue({
+      amount: BigInt('18446744073709551615'),
+      expiration_ledger: 1000 + 17368 * 7,
+    });
 
     const submission: AddAllowance = {
       type: BidderSubmissionType.ADD_ALLOWANCE,

@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AuctioneerDatabase } from '../../src/utils/db.js';
-import { parse, stringify } from '../../src/utils/json.js';
+import { parse } from '../../src/utils/json.js';
 
 const mockPoolPath = path.resolve(__dirname, 'mock-pool.json');
 let pool = parse<PoolV2>(fs.readFileSync(mockPoolPath, 'utf8'));
@@ -24,7 +24,6 @@ pool.reserves.forEach((reserve, assetId, map) => {
   parsedReserve.setRates(BigInt(pool.metadata.backstopRate));
   map.set(assetId, parsedReserve);
 });
-console.log(stringify(pool, 2));
 export let mockPool = pool;
 
 export const MOCK_LEDGER = pool.metadata.latestLedger;
