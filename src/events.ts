@@ -1,4 +1,4 @@
-import { PoolEvent } from '@blend-capital/blend-sdk';
+import { PoolV2Event } from '@blend-capital/blend-sdk';
 export enum EventType {
   VALIDATE_POOLS = 'validate_pools',
   LEDGER = 'ledger',
@@ -43,7 +43,7 @@ export interface LedgerEvent extends BaseEvent {
  */
 export interface PoolEventEvent extends BaseEvent {
   type: EventType.POOL_EVENT;
-  event: PoolEvent;
+  event: PoolV2Event;
 }
 
 // ********** Work Queue Only **********

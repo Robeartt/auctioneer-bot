@@ -1,5 +1,10 @@
 import { calculateAuctionFill } from './auction.js';
-import { AuctionBid, BidderSubmissionType, BidderSubmitter } from './bidder_submitter.js';
+import {
+  AddAllowance,
+  AuctionBid,
+  BidderSubmissionType,
+  BidderSubmitter,
+} from './bidder_submitter.js';
 import { AppEvent, EventType } from './events.js';
 import { APP_CONFIG } from './utils/config.js';
 import { AuctioneerDatabase, AuctionType } from './utils/db.js';
@@ -50,6 +55,21 @@ export class BidderHandler {
 
               const ledgersToFill = auctionEntry.fill_block - nextLedger;
               if (auctionEntry.fill_block === 0 || ledgersToFill <= 5 || ledgersToFill % 10 === 0) {
+                // Check if the filler has an active allowance for backstop token
+                if (
+                  auctionEntry.auction_type === AuctionType.Interest &&
+                  auctionEntry.fill_block === 0
+                ) {
+                  let allowanceCheck: AddAllowance = {
+                    type: BidderSubmissionType.ADD_ALLOWANCE,
+                    filler: filler,
+                    assetId: APP_CONFIG.backstopTokenAddress,
+                    spender: APP_CONFIG.backstopAddress,
+                    currLedger: appEvent.ledger,
+                  };
+                  this.submissionQueue.addSubmission(allowanceCheck, 4);
+                }
+
                 // recalculate the auction
                 const auction = await this.sorobanHelper.loadAuction(
                   auctionEntry.pool_id,

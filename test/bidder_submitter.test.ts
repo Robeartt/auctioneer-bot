@@ -2,13 +2,14 @@ import { Auction, PoolUser, Positions, Request, RequestType } from '@blend-capit
 import { Keypair } from '@stellar/stellar-sdk';
 import { AuctionFill, calculateAuctionFill } from '../src/auction';
 import {
+  AddAllowance,
   AuctionBid,
   BidderSubmissionType,
   BidderSubmitter,
   FillerUnwind,
 } from '../src/bidder_submitter';
 import { getFillerAvailableBalances, managePositions } from '../src/filler';
-import { Filler } from '../src/utils/config';
+import { APP_CONFIG, Filler } from '../src/utils/config';
 import { AuctioneerDatabase, AuctionEntry, AuctionType, FilledAuctionEntry } from '../src/utils/db';
 import { logger } from '../src/utils/logger';
 import { sendSlackNotification } from '../src/utils/slack_notifier';
@@ -41,6 +42,7 @@ jest.mock('../src/utils/config.js', () => {
       rpcURL: 'http://localhost:8000/rpc',
       networkPassphrase: 'Public Global Stellar Network ; September 2015',
       backstopTokenAddress: 'CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM',
+      backstopAddress: 'CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM',
       usdcAddress: 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75',
       blndAddress: 'CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY',
       keypair: '',
@@ -338,6 +340,113 @@ describe('BidderSubmitter', () => {
     expect(bidderSubmitter.containsAuction(auctionEntry)).toBe(false);
   });
 
+  it('add allowance checks if amount is below threshold', async () => {
+    bidderSubmitter.addSubmission = jest.fn();
+    mockedSorobanHelper.loadAllowance.mockResolvedValue({
+      amount: BigInt(100000e7 - 1),
+      expiration_ledger: 1000 + 17368 * 7,
+    });
+
+    const submission: AddAllowance = {
+      type: BidderSubmissionType.ADD_ALLOWANCE,
+      filler: {
+        name: 'test-filler',
+        keypair: Keypair.random(),
+        defaultProfitPct: 0,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'USD',
+            minPrimaryCollateral: 100n,
+            minHealthFactor: 0,
+            forceFill: false,
+          },
+        ],
+        supportedBid: ['USD', 'XLM'],
+        supportedLot: ['EURC', 'XLM'],
+      },
+      assetId: APP_CONFIG.backstopTokenAddress,
+      spender: APP_CONFIG.backstopAddress,
+      currLedger: 1000,
+    };
+    let result = await bidderSubmitter.submit(submission);
+
+    expect(result).toBe(true);
+    expect(mockedSorobanHelper.submitTransaction).toHaveBeenCalledTimes(1);
+    expect(bidderSubmitter.addSubmission).toHaveBeenCalledTimes(0);
+  });
+  it('add allowance checks if expiration is below threshold', async () => {
+    bidderSubmitter.addSubmission = jest.fn();
+    mockedSorobanHelper.loadAllowance.mockResolvedValue({
+      amount: BigInt('18446744073709551615'),
+      expiration_ledger: 1000 + 17368 * 7 - 1,
+    });
+
+    const submission: AddAllowance = {
+      type: BidderSubmissionType.ADD_ALLOWANCE,
+      filler: {
+        name: 'test-filler',
+        keypair: Keypair.random(),
+        defaultProfitPct: 0,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'USD',
+            minPrimaryCollateral: 100n,
+            minHealthFactor: 0,
+            forceFill: false,
+          },
+        ],
+        supportedBid: ['USD', 'XLM'],
+        supportedLot: ['EURC', 'XLM'],
+      },
+      assetId: APP_CONFIG.backstopTokenAddress,
+      spender: APP_CONFIG.backstopAddress,
+      currLedger: 1000,
+    };
+    let result = await bidderSubmitter.submit(submission);
+
+    expect(result).toBe(true);
+    expect(mockedSorobanHelper.submitTransaction).toHaveBeenCalledTimes(1);
+    expect(bidderSubmitter.addSubmission).toHaveBeenCalledTimes(0);
+  });
+
+  it('add allowance valid allowance no action taken', async () => {
+    bidderSubmitter.addSubmission = jest.fn();
+    mockedSorobanHelper.loadAllowance.mockResolvedValue({
+      amount: BigInt('18446744073709551615'),
+      expiration_ledger: 1000 + 17368 * 7,
+    });
+
+    const submission: AddAllowance = {
+      type: BidderSubmissionType.ADD_ALLOWANCE,
+      filler: {
+        name: 'test-filler',
+        keypair: Keypair.random(),
+        defaultProfitPct: 0,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'USD',
+            minPrimaryCollateral: 100n,
+            minHealthFactor: 0,
+            forceFill: false,
+          },
+        ],
+        supportedBid: ['USD', 'XLM'],
+        supportedLot: ['EURC', 'XLM'],
+      },
+      assetId: APP_CONFIG.backstopTokenAddress,
+      spender: APP_CONFIG.backstopAddress,
+      currLedger: 1000,
+    };
+    let result = await bidderSubmitter.submit(submission);
+
+    expect(result).toBe(true);
+    expect(mockedSorobanHelper.submitTransaction).toHaveBeenCalledTimes(0);
+    expect(bidderSubmitter.addSubmission).toHaveBeenCalledTimes(0);
+  });
+
   it('should handle dropped bid', async () => {
     const submission: AuctionBid = {
       type: BidderSubmissionType.BID,
@@ -418,6 +527,48 @@ describe('BidderSubmitter', () => {
     );
     expect(mockedSendSlackNotif).toHaveBeenCalledWith(
       `Dropped filler unwind\n` + `Filler: ${submission.filler.name}\n` + `Pool: ${mockPool.id}`
+    );
+  });
+
+  it('should handle dropped add allowance', async () => {
+    const submission: AddAllowance = {
+      type: BidderSubmissionType.ADD_ALLOWANCE,
+      filler: {
+        name: 'test-filler',
+        keypair: Keypair.random(),
+        defaultProfitPct: 0,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'USD',
+            minPrimaryCollateral: 100n,
+            minHealthFactor: 0,
+            forceFill: false,
+          },
+        ],
+        supportedBid: ['USD', 'XLM'],
+        supportedLot: ['EURC', 'XLM'],
+      },
+      assetId: APP_CONFIG.backstopTokenAddress,
+      spender: APP_CONFIG.backstopAddress,
+      currLedger: 1000,
+    };
+
+    await bidderSubmitter.onDrop(submission);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      `Dropped allowance check\n` +
+        `Filler: ${submission.filler.name}\n` +
+        `Spender: ${submission.spender}\n` +
+        `Asset: ${submission.assetId}\n` +
+        `Ledger: ${submission.currLedger}`
+    );
+    expect(mockedSendSlackNotif).toHaveBeenCalledWith(
+      `Dropped allowance check\n` +
+        `Filler: ${submission.filler.name}\n` +
+        `Spender: ${submission.spender}\n` +
+        `Asset: ${submission.assetId}\n` +
+        `Ledger: ${submission.currLedger}`
     );
   });
 });

@@ -87,9 +87,9 @@ describe('auctions', () => {
       totalEffectiveCollateral: 4750,
       borrowCap: 0,
       borrowLimit: 0,
-      netApr: 0,
-      supplyApr: 0,
-      borrowApr: 0,
+      netApy: 0,
+      supplyApy: 0,
+      borrowApy: 0,
     };
     mockedSorobanHelper.loadPool.mockResolvedValue(mockPool);
     mockedSorobanHelper.loadPoolOracle.mockResolvedValue(mockPoolOracle);

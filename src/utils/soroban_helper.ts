@@ -9,11 +9,12 @@ import {
   PoolContract,
   PoolOracle,
   PoolUser,
-  PoolV1,
+  PoolV2,
   PositionsEstimate,
 } from '@blend-capital/blend-sdk';
 import {
   Account,
+  Address,
   BASE_FEE,
   Contract,
   Keypair,
@@ -75,7 +76,7 @@ export class SorobanHelper {
       if (cachedPool) {
         return cachedPool;
       }
-      let pool: Pool = await PoolV1.load(this.network, poolId);
+      let pool: Pool = await PoolV2.load(this.network, poolId);
       this.pool_cache.set(poolId, pool);
       return pool;
     } catch (e: any) {
@@ -191,6 +192,63 @@ export class SorobanHelper {
       return balances;
     } catch (e) {
       logger.error(`Error loading balances: ${e}`);
+      throw e;
+    }
+  }
+
+  async loadAllowance(
+    tokenId: string,
+    from: string,
+    spender: string
+  ): Promise<{ expiration_ledger: number; amount: bigint }> {
+    try {
+      const stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
+      const res: xdr.ScVal[] = [
+        xdr.ScVal.scvSymbol('Allowance'),
+        xdr.ScVal.scvMap([
+          new xdr.ScMapEntry({
+            key: xdr.ScVal.scvSymbol('from'),
+            val: Address.fromString(from).toScVal(),
+          }),
+          new xdr.ScMapEntry({
+            key: xdr.ScVal.scvSymbol('spender'),
+            val: Address.fromString(spender).toScVal(),
+          }),
+        ]),
+      ];
+      const ledgerKey = xdr.LedgerKey.contractData(
+        new xdr.LedgerKeyContractData({
+          contract: Address.fromString(tokenId).toScAddress(),
+          key: xdr.ScVal.scvVec(res),
+          durability: xdr.ContractDataDurability.temporary(),
+        })
+      );
+      const ledgerData = await stellarRpc.getLedgerEntries(ledgerKey);
+
+      if (ledgerData.entries.length !== 1) {
+        return {
+          expiration_ledger: 0,
+          amount: 0n,
+        };
+      }
+      let allowance = scValToNative(ledgerData.entries[0].val.contractData().val());
+
+      if (
+        allowance === undefined ||
+        allowance.expiration_ledger === undefined ||
+        allowance.amount === undefined
+      ) {
+        throw new Error('Invalid allowance data');
+      }
+
+      return allowance;
+    } catch (e) {
+      logger.error(
+        `Error loading allowance expiration for tokenId: ${tokenId}\n` +
+          `from: ${from}\n` +
+          `spender: ${spender}\n` +
+          `Error: ${e}`
+      );
       throw e;
     }
   }

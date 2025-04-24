@@ -1,8 +1,8 @@
-import { PoolContractV1 } from '@blend-capital/blend-sdk';
-import { rpc } from '@stellar/stellar-sdk';
+import { ContractErrorType, PoolContractV2 } from '@blend-capital/blend-sdk';
+import { Address, Contract, nativeToScVal, rpc } from '@stellar/stellar-sdk';
 import { calculateAuctionFill } from './auction.js';
 import { getFillerAvailableBalances, managePositions } from './filler.js';
-import { Filler } from './utils/config.js';
+import { APP_CONFIG, Filler } from './utils/config.js';
 import { AuctioneerDatabase, AuctionEntry, AuctionType } from './utils/db.js';
 import { serializeError, stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
@@ -10,11 +10,12 @@ import { sendSlackNotification } from './utils/slack_notifier.js';
 import { SorobanHelper } from './utils/soroban_helper.js';
 import { SubmissionQueue } from './utils/submission_queue.js';
 
-export type BidderSubmission = AuctionBid | FillerUnwind;
+export type BidderSubmission = AuctionBid | FillerUnwind | AddAllowance;
 
 export enum BidderSubmissionType {
   BID = 'bid',
   UNWIND = 'unwind',
+  ADD_ALLOWANCE = 'add_allowance',
 }
 
 export interface BaseBidderSubmission {
@@ -31,6 +32,17 @@ export interface FillerUnwind extends BaseBidderSubmission {
   type: BidderSubmissionType.UNWIND;
   poolId: string;
   filler: Filler;
+}
+
+/**
+ * Event to check for allowance updates.
+ */
+export interface AddAllowance extends BaseBidderSubmission {
+  type: BidderSubmissionType.ADD_ALLOWANCE;
+  filler: Filler;
+  assetId: string;
+  spender: string;
+  currLedger: number;
 }
 
 export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
@@ -66,6 +78,8 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         return this.submitBid(sorobanHelper, submission);
       case BidderSubmissionType.UNWIND:
         return this.submitUnwind(sorobanHelper, submission);
+      case BidderSubmissionType.ADD_ALLOWANCE:
+        return this.submitAddAllowance(sorobanHelper, submission);
       default:
         logger.error(`Invalid submission type: ${stringify(submission)}`);
         // consume the submission
@@ -105,7 +119,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       );
 
       if (nextLedger >= fill.block) {
-        const pool = new PoolContractV1(auctionBid.auctionEntry.pool_id);
+        const pool = new PoolContractV2(auctionBid.auctionEntry.pool_id);
 
         const result = await sorobanHelper.submitTransaction(
           pool.submit({
@@ -225,7 +239,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
     if (requests.length > 0) {
       logger.info('Unwind found positions to manage', requests);
       // some positions to manage - submit the transaction
-      const pool = new PoolContractV1(fillerUnwind.poolId);
+      const pool = new PoolContractV2(fillerUnwind.poolId);
       const result = await sorobanHelper.submitTransaction(
         pool.submit({
           from: filler_pubkey,
@@ -267,6 +281,47 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
     return true;
   }
 
+  async submitAddAllowance(
+    sorobanHelper: SorobanHelper,
+    allowance: AddAllowance
+  ): Promise<boolean> {
+    try {
+      const allowanceData = await sorobanHelper.loadAllowance(
+        allowance.assetId,
+        allowance.filler.keypair.publicKey(),
+        allowance.spender
+      );
+      if (
+        allowanceData.amount < BigInt(100_000e7) ||
+        allowanceData.expiration_ledger < allowance.currLedger + 17368 * 7
+      ) {
+        const assetContract = new Contract(allowance.assetId);
+        const op = assetContract
+          .call(
+            'approve',
+            ...[
+              Address.fromString(allowance.filler.keypair.publicKey()).toScVal(),
+              Address.fromString(allowance.spender).toScVal(),
+              nativeToScVal(BigInt('18446744073709551615'), { type: 'i128' }),
+              nativeToScVal(allowance.currLedger + 17368 * 30 * 5, { type: 'u32' }),
+            ]
+          )
+          .toXDR('base64');
+        await sorobanHelper.submitTransaction(op, allowance.filler.keypair);
+
+        const logMessage =
+          `Successfully updated allowance\n` +
+          `Filler: ${allowance.filler.name}\n` +
+          `Spender: ${allowance.spender}\n` +
+          `Asset: ${allowance.assetId}\n`;
+        logger.info(logMessage);
+        return true; // TODO: Check for error in response
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
   async onDrop(submission: BidderSubmission): Promise<void> {
     let logMessage: string;
     switch (submission.type) {
@@ -285,6 +340,14 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
           `Dropped filler unwind\n` +
           `Filler: ${submission.filler.name}\n` +
           `Pool: ${submission.poolId}`;
+        break;
+      case BidderSubmissionType.ADD_ALLOWANCE:
+        logMessage =
+          `Dropped allowance check\n` +
+          `Filler: ${submission.filler.name}\n` +
+          `Spender: ${submission.spender}\n` +
+          `Asset: ${submission.assetId}\n` +
+          `Ledger: ${submission.currLedger}`;
         break;
     }
     logger.error(logMessage);

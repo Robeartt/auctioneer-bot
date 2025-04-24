@@ -1,4 +1,4 @@
-import { PoolOracle, PoolV1, PriceData, ReserveV1 } from '@blend-capital/blend-sdk';
+import { Pool, PoolOracle, PoolV2, PriceData, ReserveV2 } from '@blend-capital/blend-sdk';
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -6,23 +6,23 @@ import { AuctioneerDatabase } from '../../src/utils/db.js';
 import { parse } from '../../src/utils/json.js';
 
 const mockPoolPath = path.resolve(__dirname, 'mock-pool.json');
-let pool = parse<PoolV1>(fs.readFileSync(mockPoolPath, 'utf8'));
+let pool = parse<PoolV2>(fs.readFileSync(mockPoolPath, 'utf8'));
 pool.reserves.forEach((reserve, assetId, map) => {
-  const reserveV1 = reserve as ReserveV1;
-  map.set(
+  let parsedReserve = new ReserveV2(
+    pool.id,
     assetId,
-    new ReserveV1(
-      pool.id,
-      assetId,
-      reserve.config,
-      reserve.data,
-      reserveV1.borrowEmissions,
-      reserveV1.supplyEmissions,
-      reserve.borrowApr,
-      reserve.supplyApr,
-      reserve.latestLedger
-    )
+    reserve.config,
+    reserve.data,
+    reserve.borrowEmissions,
+    reserve.supplyEmissions,
+    reserve.borrowApr,
+    0,
+    reserve.supplyApr,
+    0,
+    reserve.latestLedger
   );
+  parsedReserve.setRates(BigInt(pool.metadata.backstopRate));
+  map.set(assetId, parsedReserve);
 });
 export let mockPool = pool;
 

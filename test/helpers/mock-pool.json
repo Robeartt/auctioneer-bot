@@ -50,20 +50,22 @@
           "r_one": 500000,
           "r_two": 5000000,
           "r_three": 50000000,
-          "reactivity": 20
+          "reactivity": 20,
+          "supply_cap": 170141183460469231731687303715884105727,
+          "enabled": true
         },
         "data": {
           "dRate": {
             "type": "bigint",
-            "value": "1000568954"
+            "value": "1000568954000"
           },
           "bRate": {
             "type": "bigint",
-            "value": "1000087669"
+            "value": "1000087669000"
           },
           "interestRateModifier": {
             "type": "bigint",
-            "value": "100000000"
+            "value": "1000000"
           },
           "dSupply": {
             "type": "bigint",
@@ -80,37 +82,29 @@
           "lastTime": 1723574859
         },
         "borrowEmissions": {
-          "config": {
-            "eps": {
-              "type": "bigint",
-              "value": "93079"
-            },
-            "expiration": 1724136187
+          "eps": {
+            "type": "bigint",
+            "value": "93079"
           },
-          "data": {
-            "index": {
-              "type": "bigint",
-              "value": "5978351"
-            },
-            "lastTime": 1723565204
+          "expiration": 1724136187,
+          "index": {
+            "type": "bigint",
+            "value": "5978351"
           },
+          "lastTime": 1723565204,
           "latestLedger": 53017264
         },
         "supplyEmissions": {
-          "config": {
-            "eps": {
-              "type": "bigint",
-              "value": "93079"
-            },
-            "expiration": 1724136187
+          "eps": {
+            "type": "bigint",
+            "value": "93079"
           },
-          "data": {
-            "index": {
-              "type": "bigint",
-              "value": "79988"
-            },
-            "lastTime": 1723574939
+          "expiration": 1724136187,
+          "index": {
+            "type": "bigint",
+            "value": "79988"
           },
+          "lastTime": 1723574939,
           "latestLedger": 53017264
         },
         "borrowApr": 0.0034092,
@@ -140,20 +134,22 @@
           "r_one": 600000,
           "r_two": 1200000,
           "r_three": 50000000,
-          "reactivity": 20
+          "reactivity": 20,
+          "supply_cap": 170141183460469231731687303715884105727,
+          "enabled": true
         },
         "data": {
           "dRate": {
             "type": "bigint",
-            "value": "1010182553"
+            "value": "1010182553000"
           },
           "bRate": {
             "type": "bigint",
-            "value": "1006990441"
+            "value": "1006990441000"
           },
           "interestRateModifier": {
             "type": "bigint",
-            "value": "1195678360"
+            "value": "11956783"
           },
           "dSupply": {
             "type": "bigint",
@@ -170,37 +166,29 @@
           "lastTime": 1723567543
         },
         "borrowEmissions": {
-          "config": {
-            "eps": {
-              "type": "bigint",
-              "value": "232700"
-            },
-            "expiration": 1724136187
+          "eps": {
+            "type": "bigint",
+            "value": "232700"
           },
-          "data": {
-            "index": {
-              "type": "bigint",
-              "value": "1668489"
-            },
-            "lastTime": 1723574728
+          "expiration": 1724136187,
+          "index": {
+            "type": "bigint",
+            "value": "1668489"
           },
+          "lastTime": 1723574728,
           "latestLedger": 53017264
         },
         "supplyEmissions": {
-          "config": {
-            "eps": {
-              "type": "bigint",
-              "value": "232700"
-            },
-            "expiration": 1724136187
+          "eps": {
+            "type": "bigint",
+            "value": "232700"
           },
-          "data": {
-            "index": {
-              "type": "bigint",
-              "value": "1336228"
-            },
-            "lastTime": 1723574728
+          "expiration": 1724136187,
+          "index": {
+            "type": "bigint",
+            "value": "1336228"
           },
+          "lastTime": 1723574728,
           "latestLedger": 53017264
         },
         "borrowApr": 0.1500306,
@@ -230,20 +218,22 @@
           "r_one": 600000,
           "r_two": 1200000,
           "r_three": 50000000,
-          "reactivity": 20
+          "reactivity": 20,
+          "supply_cap": 170141183460469231731687303715884105727,
+          "enabled": true
         },
         "data": {
           "dRate": {
             "type": "bigint",
-            "value": "1009888396"
+            "value": "1009888396000"
           },
           "bRate": {
             "type": "bigint",
-            "value": "1004770254"
+            "value": "1004770254000"
           },
           "interestRateModifier": {
             "type": "bigint",
-            "value": "1256459879"
+            "value": "12564598"
           },
           "dSupply": {
             "type": "bigint",
@@ -260,37 +250,29 @@
           "lastTime": 1723567988
         },
         "borrowEmissions": {
-          "config": {
-            "eps": {
-              "type": "bigint",
-              "value": "93079"
-            },
-            "expiration": 1724136187
+          "eps": {
+            "type": "bigint",
+            "value": "93079"
           },
-          "data": {
-            "index": {
-              "type": "bigint",
-              "value": "3843472"
-            },
-            "lastTime": 1723573325
+          "expiration": 1724136187,
+          "index": {
+            "type": "bigint",
+            "value": "3843472"
           },
+          "lastTime": 1723573325,
           "latestLedger": 53017264
         },
         "supplyEmissions": {
-          "config": {
-            "eps": {
-              "type": "bigint",
-              "value": "93079"
-            },
-            "expiration": 1724136187
+          "eps": {
+            "type": "bigint",
+            "value": "93079"
           },
-          "data": {
-            "index": {
-              "type": "bigint",
-              "value": "2190400"
-            },
-            "lastTime": 1723573325
+          "expiration": 1724136187,
+          "index": {
+            "type": "bigint",
+            "value": "2190400"
           },
+          "lastTime": 1723573325,
           "latestLedger": 53017264
         },
         "borrowApr": 0.1104193,
@@ -320,20 +302,22 @@
           "r_one": 600000,
           "r_two": 3000000,
           "r_three": 50000000,
-          "reactivity": 20
+          "reactivity": 20,
+          "supply_cap": 170141183460469231731687303715884105727,
+          "enabled": true
         },
         "data": {
           "dRate": {
             "type": "bigint",
-            "value": "1000360584"
+            "value": "1000360584000"
           },
           "bRate": {
             "type": "bigint",
-            "value": "1000024989"
+            "value": "1000024989000"
           },
           "interestRateModifier": {
             "type": "bigint",
-            "value": "100000000"
+            "value": "1000000"
           },
           "dSupply": {
             "type": "bigint",
@@ -350,20 +334,16 @@
           "lastTime": 1723571395
         },
         "supplyEmissions": {
-          "config": {
-            "eps": {
-              "type": "bigint",
-              "value": "93079"
-            },
-            "expiration": 1724136187
+          "eps": {
+            "type": "bigint",
+            "value": "93079"
           },
-          "data": {
-            "index": {
-              "type": "bigint",
-              "value": "1716"
-            },
-            "lastTime": 1723571395
+          "expiration": 1724136187,
+          "index": {
+            "type": "bigint",
+            "value": "1716"
           },
+          "lastTime": 1723571395,
           "latestLedger": 53017265
         },
         "borrowApr": 0.0066767,
