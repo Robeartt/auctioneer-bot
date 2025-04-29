@@ -8,6 +8,7 @@ export enum EventType {
   POOL_EVENT = 'pool_event',
   USER_REFRESH = 'user_refresh',
   CHECK_USER = 'check_user',
+  CHECK_INTEREST = 'check_interest',
 }
 
 // ********* Shared **********
@@ -20,7 +21,8 @@ export type AppEvent =
   | LiqScanEvent
   | PoolEventEvent
   | UserRefreshEvent
-  | CheckUserEvent;
+  | CheckUserEvent
+  | CheckInterestEvent;
 
 /**
  * Base interface for all events.
@@ -68,7 +70,7 @@ export interface OracleScanEvent extends BaseEvent {
 }
 
 /**
- * Event to scan for liquidations for the given pool.
+ * Event to scan for liquidations in tracked pools.
  */
 export interface LiqScanEvent extends BaseEvent {
   type: EventType.LIQ_SCAN;
@@ -95,4 +97,11 @@ export interface CheckUserEvent extends BaseEvent {
    * The user to check.
    */
   userId: string;
+}
+
+/**
+ * Event to check for interest auctions.
+ */
+export interface CheckInterestEvent extends BaseEvent {
+  type: EventType.CHECK_INTEREST;
 }
