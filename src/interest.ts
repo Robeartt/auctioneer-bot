@@ -28,7 +28,7 @@ export async function checkPoolForInterestAuction(
     backstopCredit.sort((a, b) => b[1] - a[1]);
     for (let i = 0; i < backstopCredit.length; i++) {
       const [assetId, credit] = backstopCredit[i];
-      if (credit < 10 || i + 1 >= maxLotAssets) {
+      if (credit < 10 || i >= maxLotAssets) {
         break;
       }
       totalInterest += credit;
