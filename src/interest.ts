@@ -64,7 +64,7 @@ export async function checkPoolForInterestAuction(
             };
           } else {
             const logMessage =
-              `Filler ran out of have enough backstop tokens to create backstop interest auction.\n` +
+              `Filler does not have enough backstop tokens to create backstop interest auction.\n` +
               `User: ${filler.keypair.publicKey()}\n` +
               `Balance: ${FixedMath.toFloat(backstopTokenBalance)}\n` +
               `Required: ${totalInterest / backstopToken.lpTokenPrice}`;

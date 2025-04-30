@@ -1,4 +1,11 @@
-import { Auction, PoolUser, Positions, Request, RequestType } from '@blend-capital/blend-sdk';
+import {
+  Auction,
+  BackstopToken,
+  PoolUser,
+  Positions,
+  Request,
+  RequestType,
+} from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import { AuctionFill, calculateAuctionFill } from '../src/auction';
 import {
@@ -15,6 +22,7 @@ import { logger } from '../src/utils/logger';
 import { sendSlackNotification } from '../src/utils/slack_notifier';
 import { SorobanHelper } from '../src/utils/soroban_helper';
 import { inMemoryAuctioneerDb, mockPool, mockPoolOracle } from './helpers/mocks';
+import { stringify } from '../src/utils/json';
 
 // Mock dependencies
 jest.mock('../src/utils/db');
@@ -227,7 +235,7 @@ describe('BidderSubmitter', () => {
     mockedSorobanHelper.loadUser.mockResolvedValue(
       new PoolUser('test-user', new Positions(new Map(), new Map(), new Map()), new Map())
     );
-    mockedSorobanHelper.loadBalances.mockResolvedValue(fillerBalance);
+    mockedGetFilledAvailableBalances.mockResolvedValue(fillerBalance);
 
     mockedManagePositions.mockReturnValue(unwindRequest);
 
@@ -274,7 +282,7 @@ describe('BidderSubmitter', () => {
     mockedSorobanHelper.loadUser.mockResolvedValue(
       new PoolUser('test-user', new Positions(new Map(), new Map(), new Map()), new Map())
     );
-    mockedSorobanHelper.loadBalances.mockResolvedValue(fillerBalance);
+    mockedGetFilledAvailableBalances.mockResolvedValue(fillerBalance);
 
     mockedManagePositions.mockReturnValue(unwindRequest);
 
@@ -308,6 +316,117 @@ describe('BidderSubmitter', () => {
     );
     expect(mockedSorobanHelper.submitTransaction).toHaveBeenCalledTimes(0);
     expect(bidderSubmitter.addSubmission).toHaveBeenCalledTimes(0);
+  });
+
+  it('should stop submitting unwind events and send slack notification when liabilities remain', async () => {
+    const fillerBalance = new Map<string, bigint>([['USD', 123n]]);
+    const unwindRequest: Request[] = [];
+    const fillerPositions = new Positions(new Map([[0, 123n]]), new Map([[1, 123n]]), new Map());
+
+    bidderSubmitter.addSubmission = jest.fn();
+    mockedSorobanHelper.loadPool.mockResolvedValue(mockPool);
+    mockedSorobanHelper.loadPoolOracle.mockResolvedValue(mockPoolOracle);
+    mockedSorobanHelper.loadUser.mockResolvedValue(
+      new PoolUser('test-user', fillerPositions, new Map())
+    );
+    mockedGetFilledAvailableBalances.mockResolvedValue(fillerBalance);
+
+    mockedManagePositions.mockReturnValue(unwindRequest);
+
+    const submission: FillerUnwind = {
+      type: BidderSubmissionType.UNWIND,
+      poolId: mockPool.id,
+      filler: {
+        name: 'test-filler',
+        keypair: Keypair.random(),
+        defaultProfitPct: 0,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'USD',
+            minPrimaryCollateral: 100n,
+            minHealthFactor: 0,
+            forceFill: false,
+          },
+        ],
+        supportedBid: ['USD', 'XLM'],
+        supportedLot: ['EURC', 'XLM'],
+      },
+    };
+    let result = await bidderSubmitter.submit(submission);
+
+    expect(result).toBe(true);
+    expect(mockedGetFilledAvailableBalances).toHaveBeenCalledWith(
+      submission.filler,
+      ['USD', 'XLM', 'EURC'],
+      mockedSorobanHelper
+    );
+    expect(mockedSorobanHelper.submitTransaction).toHaveBeenCalledTimes(0);
+    expect(bidderSubmitter.addSubmission).toHaveBeenCalledTimes(0);
+    expect(mockedSendSlackNotif).toHaveBeenCalledWith(
+      `Filler has liabilities that cannot be removed\n` +
+        `Filler: ${submission.filler.name}\n` +
+        `Pool: ${submission.poolId}\n` +
+        `Positions: ${stringify(fillerPositions, 2)}`
+    );
+  });
+
+  it('should stop submitting unwind events and send slack notification when backstop credit low', async () => {
+    const fillerBalance = new Map<string, bigint>([
+      ['USD', 123n],
+      ['CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM', BigInt(500e7)],
+    ]);
+    const unwindRequest: Request[] = [];
+    const fillerPositions = new Positions(new Map(), new Map([[1, 123n]]), new Map());
+
+    bidderSubmitter.addSubmission = jest.fn();
+    mockedSorobanHelper.loadPool.mockResolvedValue(mockPool);
+    mockedSorobanHelper.loadPoolOracle.mockResolvedValue(mockPoolOracle);
+    mockedSorobanHelper.loadUser.mockResolvedValue(
+      new PoolUser('test-user', fillerPositions, new Map())
+    );
+    mockedGetFilledAvailableBalances.mockResolvedValue(fillerBalance);
+    mockedSorobanHelper.loadBackstopToken.mockResolvedValue({
+      lpTokenPrice: 0.5,
+    } as BackstopToken);
+
+    mockedManagePositions.mockReturnValue(unwindRequest);
+
+    const submission: FillerUnwind = {
+      type: BidderSubmissionType.UNWIND,
+      poolId: mockPool.id,
+      filler: {
+        name: 'test-filler',
+        keypair: Keypair.random(),
+        defaultProfitPct: 0,
+        supportedPools: [
+          {
+            poolAddress: mockPool.id,
+            primaryAsset: 'USD',
+            minPrimaryCollateral: 100n,
+            minHealthFactor: 0,
+            forceFill: false,
+          },
+        ],
+        supportedBid: ['USD', 'XLM', 'CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM'],
+        supportedLot: ['EURC', 'XLM'],
+      },
+    };
+    let result = await bidderSubmitter.submit(submission);
+
+    expect(result).toBe(true);
+    expect(mockedGetFilledAvailableBalances).toHaveBeenCalledWith(
+      submission.filler,
+      ['USD', 'XLM', 'CAS3FL6TLZKDGGSISDBWGGPXT3NRR4DYTZD7YOD3HMYO6LTJUVGRVEAM', 'EURC'],
+      mockedSorobanHelper
+    );
+    expect(mockedSorobanHelper.submitTransaction).toHaveBeenCalledTimes(0);
+    expect(bidderSubmitter.addSubmission).toHaveBeenCalledTimes(0);
+    expect(mockedSendSlackNotif).toHaveBeenCalledWith(
+      `Filler has low balance of backstop tokens\n` +
+        `Filler: ${submission.filler.name}\n` +
+        `Backstop Token Balance: ${500}`
+    );
   });
 
   it('should return true if auction is in the queue', () => {

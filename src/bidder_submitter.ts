@@ -1,4 +1,4 @@
-import { ContractErrorType, PoolContractV2 } from '@blend-capital/blend-sdk';
+import { FixedMath, PoolContractV2 } from '@blend-capital/blend-sdk';
 import { Address, Contract, nativeToScVal, rpc } from '@stellar/stellar-sdk';
 import { calculateAuctionFill } from './auction.js';
 import { getFillerAvailableBalances, managePositions } from './filler.js';
@@ -266,6 +266,22 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       return true;
     }
 
+    // notify slack if the filler supports interest auctions and has low backstop token balance
+    if (fillerUnwind.filler.supportedBid.includes(APP_CONFIG.backstopTokenAddress)) {
+      const backstopTokenBalance = filler_balances.get(APP_CONFIG.backstopTokenAddress);
+      const backstopToken = await sorobanHelper.loadBackstopToken();
+      const tokenBalanceFloat = FixedMath.toFloat(backstopTokenBalance ?? BigInt(0));
+      if (tokenBalanceFloat * backstopToken.lpTokenPrice < 300) {
+        const logMessage =
+          `Filler has low balance of backstop tokens\n` +
+          `Filler: ${fillerUnwind.filler.name}\n` +
+          `Backstop Token Balance: ${tokenBalanceFloat}`;
+        logger.info(logMessage);
+        await sendSlackNotification(logMessage);
+      }
+    }
+
+    // notify slack if the filler has any remaining liabilities
     if (filler_user.positions.liabilities.size > 0) {
       const logMessage =
         `Filler has liabilities that cannot be removed\n` +

@@ -134,7 +134,7 @@ describe('checkPoolForInterestAuction', () => {
     const assets = ['asset1', 'asset2', 'asset3', 'asset4'];
 
     const backstopCredit = [BigInt(100e7), BigInt(2e7), BigInt(300e7), BigInt(100e7)];
-    const decimals = [7, 7, 7];
+    const decimals = [7, 7, 7, 7];
     const pool = buildPoolObject('pool1', assets, backstopCredit, decimals);
 
     const prices = [BigInt(1e7), BigInt(4e7), BigInt(0.67e7), BigInt(2e7)];
@@ -155,7 +155,7 @@ describe('checkPoolForInterestAuction', () => {
     const assets = ['asset1', 'asset2', 'asset3', 'asset4'];
 
     const backstopCredit = [BigInt(105e7), BigInt(10e7), BigInt(200e7), BigInt(100e7)];
-    const decimals = [7, 7, 7];
+    const decimals = [7, 7, 7, 7];
     const pool = buildPoolObject('pool2', assets, backstopCredit, decimals);
 
     const prices = [BigInt(1e7), BigInt(4e7), BigInt(0.5e7), BigInt(2e7)];
@@ -184,7 +184,7 @@ describe('checkPoolForInterestAuction', () => {
     const assets = ['asset1', 'asset2', 'asset3', 'asset4'];
 
     const backstopCredit = [BigInt(105e7), BigInt(10e7), BigInt(200e7), BigInt(100e7)];
-    const decimals = [7, 7, 7];
+    const decimals = [7, 7, 7, 7];
     const pool = buildPoolObject('pool2', assets, backstopCredit, decimals);
     pool.metadata.maxPositions = 3;
 
@@ -214,7 +214,7 @@ describe('checkPoolForInterestAuction', () => {
     const assets = ['asset1', 'asset2', 'asset3', 'asset4'];
 
     const backstopCredit = [BigInt(105e7), BigInt(10e7), BigInt(200e7), BigInt(60e7)];
-    const decimals = [7, 7, 7];
+    const decimals = [7, 7, 7, 7];
     const pool = buildPoolObject('pool2', assets, backstopCredit, decimals);
     pool.metadata.maxPositions = 3;
 
