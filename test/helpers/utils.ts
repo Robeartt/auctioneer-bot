@@ -1,4 +1,10 @@
-import { PoolOracle, PoolV2, Positions, PositionsEstimate } from '@blend-capital/blend-sdk';
+import {
+  FixedMath,
+  PoolOracle,
+  PoolV2,
+  Positions,
+  PositionsEstimate,
+} from '@blend-capital/blend-sdk';
 import { mockPool, mockPoolOracle } from './mocks';
 
 /**
@@ -51,10 +57,13 @@ export function buildAuction(
 
   let auction = new Positions(new Map([]), new Map(), new Map());
   for (let [index, amount] of positionsToAuction.liabilities) {
-    auction.liabilities.set(index, (amount * BigInt(auctionPercent)) / BigInt(100));
+    auction.liabilities.set(index, FixedMath.mulCeil(amount, BigInt(auctionPercent), BigInt(100)));
   }
   for (let [index, amount] of positionsToAuction.collateral) {
-    auction.collateral.set(index, (amount * BigInt(withdrawnCollateralPct)) / BigInt(100));
+    auction.collateral.set(
+      index,
+      FixedMath.mulCeil(amount, BigInt(withdrawnCollateralPct), BigInt(100))
+    );
   }
 
   const auctionEstimate = PositionsEstimate.build(mockPool, mockPoolOracle, auction);
