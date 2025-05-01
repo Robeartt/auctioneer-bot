@@ -228,15 +228,16 @@ describe('WorkSubmitter', () => {
     while (workSubmitter.processing) {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    // 3 retries plus the final increment before dropping
+    // 3 retries before dropping and the last increment
     expect(submission.auctionPercent).toBe(54);
+    // log is of the last attempted retry
     expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining(
         'Error creating auction\n' +
           `Auction Type: ${AuctionType[submission.auctionType]}\n` +
           `Pool: ${mockPool.id}\n` +
           `User: ${submission.user}\n` +
-          `Auction Percent: ${submission.auctionPercent}\n` +
+          `Auction Percent: ${53}\n` +
           `Bid: ${stringify(submission.bid)}\n` +
           `Lot: ${stringify(submission.lot)}\n` +
           `Error: ${stringify(serializeError(new ContractError(ContractErrorType.InvalidLiqTooSmall)))}\n`

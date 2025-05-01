@@ -1,15 +1,18 @@
+import { FixedMath } from '@blend-capital/blend-sdk';
 import { AppEvent, EventType } from './events.js';
 import { checkUsersForLiquidationsAndBadDebt, scanUsers } from './liquidations.js';
 import { OracleHistory } from './oracle_history.js';
 import { updateUser } from './user.js';
 import { APP_CONFIG } from './utils/config.js';
-import { AuctioneerDatabase } from './utils/db.js';
+import { AuctioneerDatabase, AuctionType } from './utils/db.js';
 import { logger } from './utils/logger.js';
 import { deadletterEvent } from './utils/messages.js';
 import { setPrices } from './utils/prices.js';
 import { sendSlackNotification } from './utils/slack_notifier.js';
 import { SorobanHelper } from './utils/soroban_helper.js';
-import { WorkSubmitter } from './work_submitter.js';
+import { WorkSubmissionType, WorkSubmitter } from './work_submitter.js';
+import { canFillerBid, checkFillerSupport, getFillerAvailableBalances } from './filler.js';
+import { checkPoolForInterestAuction } from './interest.js';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000;
@@ -180,6 +183,16 @@ export class WorkHandler {
           this.submissionQueue.addSubmission(submission, 3);
         }
         break;
+      }
+      case EventType.CHECK_INTEREST: {
+        for (const poolId of APP_CONFIG.pools) {
+          const submission = await checkPoolForInterestAuction(this.sorobanHelper, poolId);
+          if (submission) {
+            this.submissionQueue.addSubmission(submission, 2);
+            // only submit one interest auction at a time
+            return;
+          }
+        }
       }
       default:
         logger.error(`Unhandled event type: ${appEvent.type}`);

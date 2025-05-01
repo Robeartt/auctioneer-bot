@@ -2,6 +2,7 @@ import { poolEventV2FromEventResponse } from '@blend-capital/blend-sdk';
 import { rpc } from '@stellar/stellar-sdk';
 import { ChildProcess } from 'child_process';
 import {
+  CheckInterestEvent,
   EventType,
   LedgerEvent,
   LiqScanEvent,
@@ -71,7 +72,8 @@ export async function runCollector(
       sendEvent(worker, event);
     }
 
-    if (ledgersProcessed % 1203 === 0) {
+    // offset allows for staggered events
+    if ((ledgersProcessed + 10) % 1200 === 0) {
       // approx every 2hr
       // send a user update event to update any users that have not been updated in ~2 weeks
       const event: UserRefreshEvent = {
@@ -82,11 +84,21 @@ export async function runCollector(
       sendEvent(worker, event);
     }
 
-    if (ledgersProcessed % 1207 === 0) {
+    if ((ledgersProcessed + 5) % 1200 === 0) {
       // approx every 2hr
       // send a liq scan event
       const event: LiqScanEvent = {
         type: EventType.LIQ_SCAN,
+        timestamp: Date.now(),
+      };
+      sendEvent(worker, event);
+    }
+
+    if (ledgersProcessed % 7250 === 0) {
+      // approx every 12hr
+      // send a check interest event
+      const event: CheckInterestEvent = {
+        type: EventType.CHECK_INTEREST,
         timestamp: Date.now(),
       };
       sendEvent(worker, event);

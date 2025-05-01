@@ -91,16 +91,6 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
       await sendSlackNotification(logMessage);
       return true;
     } catch (e: any) {
-      // if pool throws a "LIQ_TOO_SMALL" or "LIQ_TOO_LARGE" error, adjust the fill percentage
-      // by 1 percentage point before retrying.
-      if (e instanceof ContractError) {
-        if (e.type === ContractErrorType.InvalidLiqTooSmall && auction.auctionPercent < 100) {
-          auction.auctionPercent += 1;
-        } else if (e.type === ContractErrorType.InvalidLiqTooLarge && auction.auctionPercent > 1) {
-          auction.auctionPercent -= 1;
-        }
-      }
-
       const logMessage =
         `Error creating auction\n` +
         `Auction Type: ${AuctionType[auction.auctionType]}\n` +
@@ -112,6 +102,16 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
         `Error: ${stringify(serializeError(e))}\n`;
       logger.error(logMessage);
       await sendSlackNotification(`<!channel>\n` + logMessage);
+
+      // if pool throws a "LIQ_TOO_SMALL" or "LIQ_TOO_LARGE" error, adjust the fill percentage
+      // by 1 percentage point before retrying.
+      if (e instanceof ContractError) {
+        if (e.type === ContractErrorType.InvalidLiqTooSmall && auction.auctionPercent < 100) {
+          auction.auctionPercent += 1;
+        } else if (e.type === ContractErrorType.InvalidLiqTooLarge && auction.auctionPercent > 1) {
+          auction.auctionPercent -= 1;
+        }
+      }
       return false;
     }
   }
