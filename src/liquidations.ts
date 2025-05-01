@@ -80,10 +80,10 @@ export function calculateLiquidation(
     rawLiabilities.set(assetId, rawAmount);
   }
 
-  effectiveCollaterals.sort((a, b) => b[1] - a[1]);
-  effectiveLiabilities.sort((a, b) => b[1] - a[1]);
-  let firstCollateral = effectiveCollaterals.shift();
-  let firstLiability = effectiveLiabilities.shift();
+  effectiveCollaterals.sort((a, b) => a[1] - b[1]);
+  effectiveLiabilities.sort((a, b) => a[1] - b[1]);
+  let firstCollateral = effectiveCollaterals.pop();
+  let firstLiability = effectiveLiabilities.pop();
 
   if (firstCollateral === undefined || firstLiability === undefined) {
     throw new Error('No collaterals or liabilities found for liquidation calculation');
@@ -101,11 +101,10 @@ export function calculateLiquidation(
   );
   let liqPercent = calculateLiqPercent(auctionEstimate, liabilitesToReduce);
   while (liqPercent > 100 || liqPercent === 0) {
-    if (liqPercent === 0) {
-      let nextLiability = effectiveLiabilities.shift();
+    if (liqPercent > 100) {
+      let nextLiability = effectiveLiabilities.pop();
       if (nextLiability === undefined) {
-        // No more collaterals to liquidate
-        let nextCollateral = effectiveCollaterals.shift();
+        let nextCollateral = effectiveCollaterals.pop();
         if (nextCollateral === undefined) {
           return {
             auctionPercent: 100,
@@ -117,14 +116,16 @@ export function calculateLiquidation(
       } else {
         auction.liabilities.set(nextLiability[0], user.liabilities.get(nextLiability[0])!);
       }
-    } else if (liqPercent >= 101) {
-      let nextCollateral = effectiveCollaterals.shift();
+    } else if (liqPercent == 0) {
+      let nextCollateral = effectiveCollaterals.pop();
       if (nextCollateral === undefined) {
         // No more collaterals to liquidate
         return {
-          auctionPercent: liqPercent,
+          auctionPercent: 100,
           lot: Array.from(auction.collateral).map(([index]) => pool.metadata.reserveList[index]),
-          bid: Array.from(auction.liabilities).map(([index]) => pool.metadata.reserveList[index]),
+          bid: Array.from(auction.liabilities)
+            .map(([index]) => pool.metadata.reserveList[index])
+            .concat(effectiveLiabilities.map(([index]) => pool.metadata.reserveList[index])),
         };
       }
       auction.collateral.set(nextCollateral[0], user.collateral.get(nextCollateral[0])!);
@@ -140,27 +141,19 @@ export function calculateLiquidation(
   };
 }
 
-function calculateLiqPercent(positions: PositionsEstimate, liabilitesToReduce: number) {
+function calculateLiqPercent(positions: PositionsEstimate, excessLiabilities: number) {
   let avgCF = positions.totalEffectiveCollateral / positions.totalSupplied;
   let avgLF = positions.totalEffectiveLiabilities / positions.totalBorrowed;
   let estIncentive = 1 + (1 - avgCF / avgLF) / 2;
-  // The factor by which we can reduce the liabilities
-  let liabilityReductionFactor = avgLF * 1.06 - avgCF * estIncentive;
-  let totalRemoveableLiabilities = liabilityReductionFactor * positions.totalBorrowed;
+  // The factor by which the effective liabilities are reduced per raw liability
+  let borrowLimitFactor = avgLF * 1.06 - estIncentive * avgCF;
 
-  if (totalRemoveableLiabilities < liabilitesToReduce) {
-    return 0; // Not enough liabilites or a high enough reduction factor to return position to desired health factor
-  }
-
-  let liqPercent = Math.min(
-    Math.round((liabilitesToReduce / totalRemoveableLiabilities) * 100),
-    100
-  );
-
+  let totalBorrowLimitRecovered = borrowLimitFactor * positions.totalBorrowed;
+  let liqPercent = Math.round((excessLiabilities / totalBorrowLimitRecovered) * 100);
   let requiredRawCollateral = (liqPercent / 100) * positions.totalBorrowed * estIncentive;
 
   if (requiredRawCollateral > positions.totalSupplied) {
-    return 101; // Not enough collateral to cover the liquidation
+    return 0; // Not enough collateral to cover the liquidation
   }
 
   return liqPercent;
