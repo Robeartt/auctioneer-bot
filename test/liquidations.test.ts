@@ -7,7 +7,7 @@ import {
 } from '@blend-capital/blend-sdk';
 import { Keypair } from '@stellar/stellar-sdk';
 import {
-  calculateLiquidationPercent,
+  calculateLiquidation,
   checkUsersForLiquidationsAndBadDebt,
   isBadDebt,
   isLiquidatable,
@@ -18,6 +18,7 @@ import { AuctioneerDatabase } from '../src/utils/db.js';
 import { PoolUserEst, SorobanHelper } from '../src/utils/soroban_helper.js';
 import { WorkSubmissionType } from '../src/work_submitter.js';
 import {
+  AQUA,
   AQUA_ID,
   EURC,
   EURC_ID,
@@ -29,6 +30,7 @@ import {
   XLM,
   XLM_ID,
 } from './helpers/mocks.js';
+import { buildAuction } from './helpers/utils.js';
 
 jest.mock('../src/utils/soroban_helper.js');
 jest.mock('../src/utils/logger.js', () => ({
@@ -104,39 +106,376 @@ describe('isBadDebt', () => {
   });
 });
 
-describe('calculateLiquidationPercent', () => {
+describe('calculateLiquidation', () => {
   let userEstimate: PositionsEstimate;
+  let userPositions: Positions;
 
   beforeEach(() => {
     userEstimate = new PositionsEstimate(0, 0, 0, 0, 0, 0, 0, 0, 0);
   });
-  it('should calculate the correct liquidation percent for typical values', () => {
-    userEstimate.totalEffectiveCollateral = 1000;
-    userEstimate.totalEffectiveLiabilities = 1100;
-    userEstimate.totalBorrowed = 1500;
-    userEstimate.totalSupplied = 2000;
-    const result = calculateLiquidationPercent(userEstimate);
-    expect(Number(result)).toBe(56);
+  it('should find auction subset with partial auction', () => {
+    let userPositions = new Positions(
+      new Map([
+        [USDC_ID, BigInt(2000e7)],
+        [EURC_ID, BigInt(1000e7)],
+      ]),
+      new Map([
+        [XLM_ID, BigInt(38000e7)],
+        [EURC_ID, BigInt(500e7)],
+      ]),
+      new Map([])
+    );
+    userEstimate = PositionsEstimate.build(mockPool, mockPoolOracle, userPositions);
+
+    const result = calculateLiquidation(mockPool, userPositions, userEstimate, mockPoolOracle);
+
+    let [auction, auctionEstimate] = buildAuction(
+      userPositions,
+      result.auctionPercent,
+      result.bid,
+      result.lot,
+      mockPool,
+      mockPoolOracle
+    );
+    let postAuctionUser = userPositions;
+
+    for (let [index, amount] of auction.collateral) {
+      postAuctionUser.collateral.set(index, postAuctionUser.collateral.get(index)! - amount);
+    }
+
+    for (let [index, amount] of auction.liabilities) {
+      postAuctionUser.liabilities.set(index, postAuctionUser.liabilities.get(index)! - amount);
+    }
+
+    const userEstimateAfterAuction = PositionsEstimate.build(
+      mockPool,
+      mockPoolOracle,
+      postAuctionUser
+    );
+
+    expect(result.auctionPercent).toBe(46);
+    expect(result.bid).toContain(USDC);
+    expect(result.lot).toContain(XLM);
+    expect(auctionEstimate.totalSupplied > auctionEstimate.totalBorrowed).toBe(true);
+    expect(userEstimateAfterAuction.totalEffectiveCollateral).toBeGreaterThan(
+      userEstimateAfterAuction.totalEffectiveLiabilities
+    );
+
+    // Check the assets are sorted by value (highest first)
+    const collateralValues = result.lot.map((assetId) => {
+      const index = mockPool.metadata.reserveList.indexOf(assetId);
+      const amount = userPositions.collateral.get(index) || BigInt(0);
+      const price = mockPoolOracle.getPriceFloat(assetId) || 0;
+      const reserve = mockPool.reserves.get(assetId);
+      if (!reserve) return 0;
+      return reserve.toEffectiveAssetFromBTokenFloat(amount) * price;
+    });
+
+    // Check that values are in descending order
+    for (let i = 1; i < collateralValues.length; i++) {
+      expect(collateralValues[i - 1]).toBeGreaterThanOrEqual(collateralValues[i]);
+    }
+
+    const liabilityValues = result.bid.map((assetId) => {
+      const index = mockPool.metadata.reserveList.indexOf(assetId);
+      const amount = userPositions.liabilities.get(index) || BigInt(0);
+      const price = mockPoolOracle.getPriceFloat(assetId) || 0;
+      const reserve = mockPool.reserves.get(assetId);
+      if (!reserve) return 0;
+      return reserve.toEffectiveAssetFromDTokenFloat(amount) * price;
+    });
+
+    // Check that liability values are in descending order
+    for (let i = 1; i < liabilityValues.length; i++) {
+      expect(liabilityValues[i - 1]).toBeGreaterThanOrEqual(liabilityValues[i]);
+    }
   });
 
-  it('should calculate max of 100 percent liquidation size', () => {
-    userEstimate.totalEffectiveCollateral = 1700;
-    userEstimate.totalEffectiveLiabilities = 2200;
-    userEstimate.totalBorrowed = 1900;
-    userEstimate.totalSupplied = 2000;
-    const result = calculateLiquidationPercent(userEstimate);
+  it('should return 100% liquidation when health factor is very poor', () => {
+    // Create positions with very high liabilities compared to collateral
+    userPositions = new Positions(
+      new Map([
+        [USDC_ID, BigInt(5000e7)],
+        [XLM_ID, BigInt(1e7)],
+        [AQUA_ID, BigInt(1e7)],
+      ]),
+      new Map([[XLM_ID, BigInt(500e7)]]),
+      new Map([])
+    );
 
-    expect(Number(result)).toBe(100);
+    userEstimate = PositionsEstimate.build(mockPool, mockPoolOracle, userPositions);
+
+    const result = calculateLiquidation(mockPool, userPositions, userEstimate, mockPoolOracle);
+    expect(result.auctionPercent).toBe(100);
+    expect(result.bid).toContain(USDC);
+    expect(result.bid).toContain(XLM);
+    expect(result.bid).toContain(AQUA);
+    expect(result.lot).toContain(XLM);
   });
 
-  it('should calculate the smallest possible liquidation size', () => {
-    userEstimate.totalEffectiveCollateral = 2199;
-    userEstimate.totalEffectiveLiabilities = 2200;
-    userEstimate.totalBorrowed = 1900;
-    userEstimate.totalSupplied = 10000000000000;
-    const result = calculateLiquidationPercent(userEstimate);
+  it('should calculate partial liquidation for marginally unhealthy position with no valid subsets', () => {
+    userPositions = new Positions(
+      new Map([
+        [USDC_ID, BigInt(1200e7)],
+        [AQUA_ID, BigInt(800000e7)],
+      ]),
+      new Map([
+        [XLM_ID, BigInt(13050e7)],
+        [EURC_ID, BigInt(1150e7)],
+      ]),
+      new Map([])
+    );
 
-    expect(Number(result)).toBe(6);
+    // Setup for a position just slightly below health threshold
+    userEstimate = PositionsEstimate.build(mockPool, mockPoolOracle, userPositions);
+    const result = calculateLiquidation(mockPool, userPositions, userEstimate, mockPoolOracle);
+    let [auction, auctionEstimate] = buildAuction(
+      userPositions,
+      result.auctionPercent,
+      result.bid,
+      result.lot,
+      mockPool,
+      mockPoolOracle
+    );
+
+    let postAuctionUser = userPositions;
+
+    for (let [index, amount] of auction.collateral) {
+      postAuctionUser.collateral.set(index, postAuctionUser.collateral.get(index)! - amount);
+    }
+
+    for (let [index, amount] of auction.liabilities) {
+      postAuctionUser.liabilities.set(index, postAuctionUser.liabilities.get(index)! - amount);
+    }
+
+    const userEstimateAfterAuction = PositionsEstimate.build(
+      mockPool,
+      mockPoolOracle,
+      postAuctionUser
+    );
+
+    expect(result.auctionPercent).toBe(45);
+    expect(result.bid).toContain(USDC);
+    expect(result.bid).toContain(AQUA);
+    expect(result.lot).toContain(XLM);
+    expect(result.lot).toContain(EURC);
+    expect(auctionEstimate.totalSupplied > auctionEstimate.totalBorrowed).toBe(true);
+    expect(userEstimateAfterAuction.totalEffectiveCollateral).toBeGreaterThan(
+      userEstimateAfterAuction.totalEffectiveLiabilities
+    );
+
+    // Check the assets are sorted by value (highest first)
+    const collateralValues = result.lot.map((assetId) => {
+      const index = mockPool.metadata.reserveList.indexOf(assetId);
+      const amount = userPositions.collateral.get(index) || BigInt(0);
+      const price = mockPoolOracle.getPriceFloat(assetId) || 0;
+      const reserve = mockPool.reserves.get(assetId);
+      if (!reserve) return 0;
+      return reserve.toEffectiveAssetFromBTokenFloat(amount) * price;
+    });
+
+    // Check that values are in descending order
+    for (let i = 1; i < collateralValues.length; i++) {
+      expect(collateralValues[i - 1]).toBeGreaterThanOrEqual(collateralValues[i]);
+    }
+
+    const liabilityValues = result.bid.map((assetId) => {
+      const index = mockPool.metadata.reserveList.indexOf(assetId);
+      const amount = userPositions.liabilities.get(index) || BigInt(0);
+      const price = mockPoolOracle.getPriceFloat(assetId) || 0;
+      const reserve = mockPool.reserves.get(assetId);
+      if (!reserve) return 0;
+      return reserve.toEffectiveAssetFromDTokenFloat(amount) * price;
+    });
+
+    // Check that liability values are in descending order
+    for (let i = 1; i < liabilityValues.length; i++) {
+      expect(liabilityValues[i - 1]).toBeGreaterThanOrEqual(liabilityValues[i]);
+    }
+  });
+
+  it('should find auction with single collateral and multiple liabilities', () => {
+    userPositions = new Positions(
+      new Map([
+        [USDC_ID, BigInt(1100e7)],
+        [AQUA_ID, BigInt(850000e7)],
+        [XLM_ID, BigInt(9000e7)],
+      ]),
+      new Map([[EURC_ID, BigInt(3000e7)]]),
+      new Map([])
+    );
+
+    // Setup for a position just slightly below health threshold
+    userEstimate = PositionsEstimate.build(mockPool, mockPoolOracle, userPositions);
+    const result = calculateLiquidation(mockPool, userPositions, userEstimate, mockPoolOracle);
+    let [auction, auctionEstimate] = buildAuction(
+      userPositions,
+      result.auctionPercent,
+      result.bid,
+      result.lot,
+      mockPool,
+      mockPoolOracle
+    );
+
+    let postAuctionUser = userPositions;
+
+    for (let [index, amount] of auction.collateral) {
+      postAuctionUser.collateral.set(index, postAuctionUser.collateral.get(index)! - amount);
+    }
+
+    for (let [index, amount] of auction.liabilities) {
+      postAuctionUser.liabilities.set(index, postAuctionUser.liabilities.get(index)! - amount);
+    }
+
+    const userEstimateAfterAuction = PositionsEstimate.build(
+      mockPool,
+      mockPoolOracle,
+      postAuctionUser
+    );
+
+    expect(result.auctionPercent).toBe(71);
+    expect(result.bid).toContain(USDC);
+    expect(result.bid).toContain(AQUA);
+    expect(result.bid).toContain(XLM);
+    expect(result.lot).toContain(EURC);
+    expect(auctionEstimate.totalSupplied > auctionEstimate.totalBorrowed).toBe(true);
+    expect(userEstimateAfterAuction.totalEffectiveCollateral).toBeGreaterThan(
+      userEstimateAfterAuction.totalEffectiveLiabilities
+    );
+  });
+
+  it('should find auction with single liability and multiple collaterals', () => {
+    userPositions = new Positions(
+      new Map([[XLM_ID, BigInt(21000e7)]]),
+      new Map([
+        [USDC_ID, BigInt(1000e7)],
+        [XLM_ID, BigInt(8000e7)],
+        [EURC_ID, BigInt(1000e7)],
+      ]),
+      new Map([])
+    );
+
+    // Setup for a position just slightly below health threshold
+    userEstimate = PositionsEstimate.build(mockPool, mockPoolOracle, userPositions);
+    const result = calculateLiquidation(mockPool, userPositions, userEstimate, mockPoolOracle);
+    let [auction, auctionEstimate] = buildAuction(
+      userPositions,
+      result.auctionPercent,
+      result.bid,
+      result.lot,
+      mockPool,
+      mockPoolOracle
+    );
+
+    let postAuctionUser = userPositions;
+
+    for (let [index, amount] of auction.collateral) {
+      postAuctionUser.collateral.set(index, postAuctionUser.collateral.get(index)! - amount);
+    }
+
+    for (let [index, amount] of auction.liabilities) {
+      postAuctionUser.liabilities.set(index, postAuctionUser.liabilities.get(index)! - amount);
+    }
+
+    const userEstimateAfterAuction = PositionsEstimate.build(
+      mockPool,
+      mockPoolOracle,
+      postAuctionUser
+    );
+
+    expect(result.auctionPercent).toBe(56);
+    expect(result.lot).toContain(USDC);
+    expect(result.lot).toContain(EURC);
+    expect(result.bid).toContain(XLM);
+    expect(auctionEstimate.totalSupplied > auctionEstimate.totalBorrowed).toBe(true);
+    expect(userEstimateAfterAuction.totalEffectiveCollateral).toBeGreaterThan(
+      userEstimateAfterAuction.totalEffectiveLiabilities
+    );
+  });
+
+  it('should find partial auction with single liability and single collateral', () => {
+    userPositions = new Positions(
+      new Map([[XLM_ID, BigInt(74e7)]]),
+      new Map([[USDC_ID, BigInt(10e7)]]),
+      new Map([])
+    );
+
+    // Setup for a position just slightly below health threshold
+    userEstimate = PositionsEstimate.build(mockPool, mockPoolOracle, userPositions);
+    const result = calculateLiquidation(mockPool, userPositions, userEstimate, mockPoolOracle);
+    let [auction, auctionEstimate] = buildAuction(
+      userPositions,
+      result.auctionPercent,
+      result.bid,
+      result.lot,
+      mockPool,
+      mockPoolOracle
+    );
+
+    let postAuctionUser = userPositions;
+
+    for (let [index, amount] of auction.collateral) {
+      postAuctionUser.collateral.set(index, postAuctionUser.collateral.get(index)! - amount);
+    }
+
+    for (let [index, amount] of auction.liabilities) {
+      postAuctionUser.liabilities.set(index, postAuctionUser.liabilities.get(index)! - amount);
+    }
+
+    const userEstimateAfterAuction = PositionsEstimate.build(
+      mockPool,
+      mockPoolOracle,
+      postAuctionUser
+    );
+
+    expect(result.auctionPercent).toBe(33);
+    expect(result.lot).toContain(USDC);
+    expect(result.bid).toContain(XLM);
+    expect(auctionEstimate.totalSupplied > auctionEstimate.totalBorrowed).toBe(true);
+    expect(userEstimateAfterAuction.totalEffectiveCollateral).toBeGreaterThan(
+      userEstimateAfterAuction.totalEffectiveLiabilities
+    );
+  });
+
+  it('should find full auction with single liability and single collateral', () => {
+    userPositions = new Positions(
+      new Map([[XLM_ID, BigInt(89e7)]]),
+      new Map([[USDC_ID, BigInt(10e7)]]),
+      new Map([])
+    );
+
+    // Setup for a position just slightly below health threshold
+    userEstimate = PositionsEstimate.build(mockPool, mockPoolOracle, userPositions);
+    const result = calculateLiquidation(mockPool, userPositions, userEstimate, mockPoolOracle);
+    let [auction, auctionEstimate] = buildAuction(
+      userPositions,
+      result.auctionPercent,
+      result.bid,
+      result.lot,
+      mockPool,
+      mockPoolOracle
+    );
+
+    let postAuctionUser = userPositions;
+
+    for (let [index, amount] of auction.collateral) {
+      postAuctionUser.collateral.set(index, postAuctionUser.collateral.get(index)! - amount);
+    }
+
+    for (let [index, amount] of auction.liabilities) {
+      postAuctionUser.liabilities.set(index, postAuctionUser.liabilities.get(index)! - amount);
+    }
+
+    const userEstimateAfterAuction = PositionsEstimate.build(
+      mockPool,
+      mockPoolOracle,
+      postAuctionUser
+    );
+
+    expect(result.auctionPercent).toBe(100);
+    expect(result.lot).toContain(USDC);
+    expect(result.bid).toContain(XLM);
+    expect(auctionEstimate.totalSupplied > auctionEstimate.totalBorrowed).toBe(true);
   });
 });
 
@@ -167,10 +506,16 @@ describe('scanUsers', () => {
   });
 
   it('should create a work submission for liquidatable users', async () => {
-    mockPoolUserEstimate.totalEffectiveCollateral = 1000;
-    mockPoolUserEstimate.totalEffectiveLiabilities = 1100;
-    mockPoolUserEstimate.totalBorrowed = 1500;
-    mockPoolUserEstimate.totalSupplied = 2000;
+    mockPoolUser.positions = new Positions(
+      new Map([[USDC_ID, BigInt(300e7)]]),
+      new Map([[XLM_ID, BigInt(3000e7)]]),
+      new Map()
+    );
+    mockPoolUserEstimate = PositionsEstimate.build(
+      mockPool,
+      mockPoolOracle,
+      mockPoolUser.positions
+    );
     db.setUserEntry({
       pool_id: 'pool1',
       user_id: mockPoolUser.userId,
@@ -207,6 +552,7 @@ describe('scanUsers', () => {
         return Promise.resolve({ estimate: {}, user: {} } as PoolUserEst);
       }
     );
+    mockedSorobanHelper.loadPoolOracle.mockResolvedValue(mockPoolOracle);
     mockedSorobanHelper.loadAuction.mockResolvedValue(undefined);
 
     let liquidations = await scanUsers(db, mockedSorobanHelper);
@@ -364,7 +710,7 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
       user: mockUser,
     });
     mockedSorobanHelper.loadAuction.mockResolvedValue(undefined);
-
+    mockedSorobanHelper.loadPoolOracle.mockResolvedValue(mockPoolOracle);
     const result = await checkUsersForLiquidationsAndBadDebt(
       db,
       mockedSorobanHelper,
@@ -379,7 +725,7 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
         poolId: mockPool.id,
         auctionType: AuctionType.Liquidation,
         user: 'user1',
-        auctionPercent: 56,
+        auctionPercent: 100,
         bid: [USDC],
         lot: [XLM],
       },
