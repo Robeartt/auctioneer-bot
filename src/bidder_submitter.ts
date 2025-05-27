@@ -120,6 +120,12 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
 
       if (nextLedger >= fill.block) {
         const pool = new PoolContractV2(auctionBid.auctionEntry.pool_id);
+        const est_profit = fill.lotValue - fill.bidValue;
+        // include high inclusion fee if the esimated profit is over $10
+        if (est_profit > 10) {
+          // this object gets recreated every time, so no need to reset the fee level
+          sorobanHelper.setFeeLevel('high');
+        }
 
         const result = await sorobanHelper.submitTransaction(
           pool.submit({
