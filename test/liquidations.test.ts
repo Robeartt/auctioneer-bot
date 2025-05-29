@@ -693,6 +693,49 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
     ]);
   });
 
+  it('should respect pool max positions for bad debt auctions', async () => {
+    const user_ids = [APP_CONFIG.backstopAddress];
+
+    mockedSorobanHelper.loadPool.mockResolvedValue(mockPool);
+    mockBackstopPositionsEstimate.totalEffectiveLiabilities = 1000;
+    mockBackstopPositionsEstimate.totalEffectiveCollateral = 0;
+    // max positions is 4, so at most 3 positions should be used (given 1 is reserved for the lot asset)
+    mockBackstopPositions.positions = new Positions(
+      new Map([
+        [USDC_ID, 2000n],
+        [XLM_ID, 3000n],
+        [EURC_ID, 4000n],
+        [AQUA_ID, 5000n],
+      ]),
+      new Map(),
+      new Map()
+    );
+    mockedSorobanHelper.loadUserPositionEstimate.mockResolvedValue({
+      estimate: mockBackstopPositionsEstimate,
+      user: mockBackstopPositions,
+    });
+    mockedSorobanHelper.loadAuction.mockResolvedValue(undefined);
+
+    const result = await checkUsersForLiquidationsAndBadDebt(
+      db,
+      mockedSorobanHelper,
+      mockPool.id,
+      user_ids
+    );
+
+    expect(result).toEqual([
+      {
+        type: WorkSubmissionType.AuctionCreation,
+        poolId: mockPool.id,
+        user: APP_CONFIG.backstopAddress,
+        auctionType: AuctionType.BadDebt,
+        bid: [USDC, XLM, EURC],
+        lot: [APP_CONFIG.backstopTokenAddress],
+        auctionPercent: 100,
+      },
+    ]);
+  });
+
   it('should handle liquidatable users correctly', async () => {
     const user_ids = ['user1'];
     mockedSorobanHelper.loadPool.mockResolvedValue(mockPool);
@@ -726,6 +769,48 @@ describe('checkUsersForLiquidationsAndBadDebt', () => {
         auctionType: AuctionType.Liquidation,
         user: 'user1',
         auctionPercent: 100,
+        bid: [USDC],
+        lot: [XLM],
+      },
+    ]);
+  });
+
+  it('should handle partial user liquidations', async () => {
+    const user_ids = ['user1'];
+    mockedSorobanHelper.loadPool.mockResolvedValue(mockPool);
+    mockUser.positions = new Positions(
+      new Map([
+        [USDC_ID, BigInt(2000e7)],
+        [EURC_ID, BigInt(1000e7)],
+      ]),
+      new Map([
+        [XLM_ID, BigInt(38000e7)],
+        [EURC_ID, BigInt(500e7)],
+      ]),
+      new Map([])
+    );
+    mockUserEstimate = PositionsEstimate.build(mockPool, mockPoolOracle, mockUser.positions);
+    mockedSorobanHelper.loadUserPositionEstimate.mockResolvedValue({
+      estimate: mockUserEstimate,
+      user: mockUser,
+    });
+    mockedSorobanHelper.loadAuction.mockResolvedValue(undefined);
+    mockedSorobanHelper.loadPoolOracle.mockResolvedValue(mockPoolOracle);
+    const result = await checkUsersForLiquidationsAndBadDebt(
+      db,
+      mockedSorobanHelper,
+      mockPool.id,
+      user_ids
+    );
+
+    expect(result.length).toBe(1);
+    expect(result).toEqual([
+      {
+        type: WorkSubmissionType.AuctionCreation,
+        poolId: mockPool.id,
+        auctionType: AuctionType.Liquidation,
+        user: 'user1',
+        auctionPercent: 46,
         bid: [USDC],
         lot: [XLM],
       },

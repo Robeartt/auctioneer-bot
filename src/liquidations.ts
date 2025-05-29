@@ -6,6 +6,27 @@ import { logger } from './utils/logger.js';
 import { SorobanHelper } from './utils/soroban_helper.js';
 import { WorkSubmission, WorkSubmissionType } from './work_submitter.js';
 import { sendSlackNotification } from './utils/slack_notifier.js';
+import { stringify } from './utils/json.js';
+
+/**
+ * A representation of a position taking into account the oracle price.
+ */
+interface PricedPosition {
+  assetId: string;
+  index: number;
+  effectiveAmount: number;
+  baseAmount: number;
+}
+
+/**
+ * The result of a liquidation calculation.
+ * Contains the auction percent, lot and bid asset ids.
+ */
+interface LiquidationCalc {
+  auctionPercent: number;
+  lot: string[];
+  bid: string[];
+}
 
 /**
  * Check if a user is liquidatable
@@ -45,15 +66,9 @@ export function calculateLiquidation(
   user: Positions,
   estimate: PositionsEstimate,
   oracle: PoolOracle
-): {
-  auctionPercent: number;
-  lot: string[];
-  bid: string[];
-} {
-  let effectiveCollaterals: [number, number][] = [];
-  let rawCollaterals: Map<string, number> = new Map();
-  let effectiveLiabilities: [number, number][] = [];
-  let rawLiabilities: Map<string, number> = new Map();
+): LiquidationCalc {
+  let collateral: PricedPosition[] = [];
+  let liabilities: PricedPosition[] = [];
 
   for (let [index, amount] of user.collateral) {
     let assetId = pool.metadata.reserveList[index];
@@ -63,9 +78,13 @@ export function calculateLiquidation(
       continue;
     }
     let effectiveAmount = reserve.toEffectiveAssetFromBTokenFloat(amount) * oraclePrice;
-    let rawAmount = reserve.toAssetFromBTokenFloat(amount) * oraclePrice;
-    effectiveCollaterals.push([index, effectiveAmount]);
-    rawCollaterals.set(assetId, rawAmount);
+    let baseAmount = reserve.toAssetFromBTokenFloat(amount) * oraclePrice;
+    collateral.push({
+      assetId,
+      index,
+      effectiveAmount,
+      baseAmount,
+    });
   }
   for (let [index, amount] of user.liabilities) {
     let assetId = pool.metadata.reserveList[index];
@@ -75,84 +94,125 @@ export function calculateLiquidation(
       continue;
     }
     let effectiveAmount = reserve.toEffectiveAssetFromDTokenFloat(amount) * oraclePrice;
-    let rawAmount = reserve.toAssetFromDTokenFloat(amount) * oraclePrice;
-    effectiveLiabilities.push([index, effectiveAmount]);
-    rawLiabilities.set(assetId, rawAmount);
+    let baseAmount = reserve.toAssetFromDTokenFloat(amount) * oraclePrice;
+    liabilities.push({
+      assetId,
+      index,
+      effectiveAmount,
+      baseAmount,
+    });
   }
 
-  effectiveCollaterals.sort((a, b) => a[1] - b[1]);
-  effectiveLiabilities.sort((a, b) => a[1] - b[1]);
-  let firstCollateral = effectiveCollaterals.pop();
-  let firstLiability = effectiveLiabilities.pop();
+  // sort ascending by effective amount
+  collateral.sort((a, b) => a.effectiveAmount - b.effectiveAmount);
+  liabilities.sort((a, b) => a.effectiveAmount - b.effectiveAmount);
+  let largestCollateral = collateral.pop();
+  let largestLiability = liabilities.pop();
 
-  if (firstCollateral === undefined || firstLiability === undefined) {
+  if (largestCollateral === undefined || largestLiability === undefined) {
     throw new Error('No collaterals or liabilities found for liquidation calculation');
   }
-  let auction = new Positions(
-    new Map([[firstLiability[0], user.liabilities.get(firstLiability[0])!]]),
-    new Map([[firstCollateral[0], user.collateral.get(firstCollateral[0])!]]),
-    new Map()
-  );
-  let auctionEstimate = PositionsEstimate.build(pool, oracle, auction);
 
-  let liabilitesToReduce = Math.max(
-    0,
-    estimate.totalEffectiveLiabilities * 1.06 - estimate.totalEffectiveCollateral
+  let liabilitesToReduce =
+    estimate.totalEffectiveLiabilities * 1.06 - estimate.totalEffectiveCollateral;
+  if (liabilitesToReduce <= 0) {
+    throw new Error('No liabilities to reduce for liquidation calculation');
+  }
+
+  let effectiveCollateral = largestCollateral.effectiveAmount;
+  let baseCollateral = largestCollateral.baseAmount;
+  let effectiveLiabilities = largestLiability.effectiveAmount;
+  let baseLiabilities = largestLiability.baseAmount;
+
+  let bid: string[] = [largestLiability.assetId];
+  let lot: string[] = [largestCollateral.assetId];
+  let liqPercent = calculateLiqPercent(
+    effectiveCollateral,
+    baseCollateral,
+    effectiveLiabilities,
+    baseLiabilities,
+    liabilitesToReduce
   );
-  let liqPercent = calculateLiqPercent(auctionEstimate, liabilitesToReduce);
   while (liqPercent > 100 || liqPercent === 0) {
     if (liqPercent > 100) {
-      let nextLiability = effectiveLiabilities.pop();
+      let nextLiability = liabilities.pop();
       if (nextLiability === undefined) {
-        let nextCollateral = effectiveCollaterals.pop();
+        let nextCollateral = collateral.pop();
         if (nextCollateral === undefined) {
+          // full liquidation required
           return {
             auctionPercent: 100,
-            lot: Array.from(auction.collateral).map(([index]) => pool.metadata.reserveList[index]),
-            bid: Array.from(auction.liabilities).map(([index]) => pool.metadata.reserveList[index]),
+            lot: Array.from(user.collateral).map(([index]) => pool.metadata.reserveList[index]),
+            bid: Array.from(user.liabilities).map(([index]) => pool.metadata.reserveList[index]),
           };
         }
-        auction.collateral.set(nextCollateral[0], user.collateral.get(nextCollateral[0])!);
+        effectiveCollateral += nextCollateral.effectiveAmount;
+        baseCollateral += nextCollateral.baseAmount;
+        lot.push(nextCollateral.assetId);
       } else {
-        auction.liabilities.set(nextLiability[0], user.liabilities.get(nextLiability[0])!);
+        effectiveLiabilities += nextLiability.effectiveAmount;
+        baseLiabilities += nextLiability.baseAmount;
+        bid.push(nextLiability.assetId);
       }
     } else if (liqPercent == 0) {
-      let nextCollateral = effectiveCollaterals.pop();
+      let nextCollateral = collateral.pop();
       if (nextCollateral === undefined) {
-        // No more collaterals to liquidate
+        // full liquidation required
         return {
           auctionPercent: 100,
-          lot: Array.from(auction.collateral).map(([index]) => pool.metadata.reserveList[index]),
-          bid: Array.from(auction.liabilities)
-            .map(([index]) => pool.metadata.reserveList[index])
-            .concat(effectiveLiabilities.map(([index]) => pool.metadata.reserveList[index])),
+          lot: Array.from(user.collateral).map(([index]) => pool.metadata.reserveList[index]),
+          bid: Array.from(user.liabilities).map(([index]) => pool.metadata.reserveList[index]),
         };
       }
-      auction.collateral.set(nextCollateral[0], user.collateral.get(nextCollateral[0])!);
+      effectiveCollateral += nextCollateral.effectiveAmount;
+      baseCollateral += nextCollateral.baseAmount;
+      lot.push(nextCollateral.assetId);
     }
-    auctionEstimate = PositionsEstimate.build(pool, oracle, auction);
-    liqPercent = calculateLiqPercent(auctionEstimate, liabilitesToReduce);
+    liqPercent = calculateLiqPercent(
+      effectiveCollateral,
+      baseCollateral,
+      effectiveLiabilities,
+      baseLiabilities,
+      liabilitesToReduce
+    );
   }
 
   return {
     auctionPercent: liqPercent,
-    lot: Array.from(auction.collateral).map(([index]) => pool.metadata.reserveList[index]),
-    bid: Array.from(auction.liabilities).map(([index]) => pool.metadata.reserveList[index]),
+    lot,
+    bid,
   };
 }
 
-function calculateLiqPercent(positions: PositionsEstimate, excessLiabilities: number) {
-  let avgCF = positions.totalEffectiveCollateral / positions.totalSupplied;
-  let avgLF = positions.totalEffectiveLiabilities / positions.totalBorrowed;
+/**
+ * Calculate the liquidation percent to bring the user back to a 1.06 HF
+ * @param effectiveCollateral - The effective collateral of the position to liquidate, in the pool's oracle denomination
+ * @param baseCollateral - The base collateral of the position to liquidate, in the pool's oracle denomination
+ * @param effectiveLiabilities - The effective liabilities of the position to liquidate, in the pool's oracle denomination
+ * @param baseLiabilities - The base liabilities of the position to liquidate, in the pool's oracle denomination
+ * @param excessLiabilities - The excess liabilities over the borrow limit, in the pool's oracle denomination
+ * @returns A percentage of the borrow limit that needs to be liquidated.
+ *          A percentage of 0 means there is not enough collateral to cover the liquidated liabilities.
+ *          A percentage over 100 means there is not enough liabilities being liquidated to cover the excess.
+ */
+function calculateLiqPercent(
+  effectiveCollateral: number,
+  baseCollateral: number,
+  effectiveLiabilities: number,
+  baseLiabilities: number,
+  excessLiabilities: number
+) {
+  let avgCF = effectiveCollateral / baseCollateral;
+  let avgLF = effectiveLiabilities / baseLiabilities;
   let estIncentive = 1 + (1 - avgCF / avgLF) / 2;
   // The factor by which the effective liabilities are reduced per raw liability
   let borrowLimitFactor = avgLF * 1.06 - estIncentive * avgCF;
 
-  let totalBorrowLimitRecovered = borrowLimitFactor * positions.totalBorrowed;
+  let totalBorrowLimitRecovered = borrowLimitFactor * baseLiabilities;
   let liqPercent = Math.round((excessLiabilities / totalBorrowLimitRecovered) * 100);
-  let requiredRawCollateral = (liqPercent / 100) * positions.totalBorrowed * estIncentive;
+  let requiredBaseCollateral = (liqPercent / 100) * baseLiabilities * estIncentive;
 
-  if (requiredRawCollateral > positions.totalSupplied) {
+  if (requiredBaseCollateral > baseCollateral) {
     return 0; // Not enough collateral to cover the liquidation
   }
 
@@ -215,15 +275,19 @@ export async function checkUsersForLiquidationsAndBadDebt(
           isBadDebt(backstopPostionsEstimate) &&
           (await sorobanHelper.loadAuction(poolId, user, AuctionType.BadDebt)) === undefined
         ) {
+          let backstopLiabilities = Array.from(backstop.positions.liabilities.keys()).map(
+            (index) => pool.metadata.reserveList[index]
+          );
+          if (backstopLiabilities.length >= pool.metadata.maxPositions) {
+            backstopLiabilities = backstopLiabilities.slice(0, pool.metadata.maxPositions - 1);
+          }
           submissions.push({
             type: WorkSubmissionType.AuctionCreation,
             poolId,
             user: APP_CONFIG.backstopAddress,
             auctionType: AuctionType.BadDebt,
             auctionPercent: 100,
-            bid: Array.from(backstop.positions.liabilities.keys()).map(
-              (index) => pool.metadata.reserveList[index]
-            ),
+            bid: backstopLiabilities,
             lot: [APP_CONFIG.backstopTokenAddress],
           });
         }
@@ -242,12 +306,8 @@ export async function checkUsersForLiquidationsAndBadDebt(
             user,
             auctionPercent: newLiq.auctionPercent,
             auctionType: AuctionType.Liquidation,
-            bid: Array.from(poolUser.positions.liabilities.keys()).map(
-              (index) => pool.metadata.reserveList[index]
-            ),
-            lot: Array.from(poolUser.positions.collateral.keys()).map(
-              (index) => pool.metadata.reserveList[index]
-            ),
+            bid: newLiq.bid,
+            lot: newLiq.lot,
           });
         } else if (isBadDebt(poolUserEstimate)) {
           submissions.push({

@@ -41,12 +41,13 @@ export interface ErrorTimeout {
 
 export class SorobanHelper {
   network: Network;
+  feeLevel: 'high' | 'medium';
   private pool_cache: Map<string, Pool>;
   // cache for pool users keyed by 'poolId + userId'
   private user_cache: Map<string, PoolUser>;
   private oracle_cache: Map<string, PoolOracle>;
 
-  constructor() {
+  constructor(feeLevel: 'high' | 'medium' = 'medium') {
     this.network = {
       rpc: APP_CONFIG.rpcURL,
       passphrase: APP_CONFIG.networkPassphrase,
@@ -54,9 +55,14 @@ export class SorobanHelper {
         allowHttp: true,
       },
     };
+    this.feeLevel = feeLevel;
     this.pool_cache = new Map();
     this.user_cache = new Map();
     this.oracle_cache = new Map();
+  }
+
+  setFeeLevel(feeLevel: 'high' | 'medium') {
+    this.feeLevel = feeLevel;
   }
 
   async loadLatestLedger(): Promise<number> {
@@ -317,10 +323,23 @@ export class SorobanHelper {
     keypair: Keypair
   ): Promise<rpc.Api.GetSuccessfulTransactionResponse & { txHash: string }> {
     const stellarRpc = new rpc.Server(this.network.rpc, this.network.opts);
+
+    let feeStats = await stellarRpc.getFeeStats();
+    let fee =
+      this.feeLevel === 'high'
+        ? Math.max(
+            parseInt(feeStats.sorobanInclusionFee.p90),
+            APP_CONFIG.highBaseFee ?? 10000
+          ).toString()
+        : Math.max(
+            parseInt(feeStats.sorobanInclusionFee.p70),
+            APP_CONFIG.baseFee ?? 5000
+          ).toString();
+
     let account = await stellarRpc.getAccount(keypair.publicKey());
     let tx = new TransactionBuilder(account, {
       networkPassphrase: this.network.passphrase,
-      fee: BASE_FEE,
+      fee: fee,
       timebounds: { minTime: 0, maxTime: Math.floor(Date.now() / 1000) + 5 * 60 * 1000 },
     })
       .addOperation(xdr.Operation.fromXDR(operation, 'base64'))

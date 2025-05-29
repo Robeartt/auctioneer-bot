@@ -65,6 +65,8 @@ export interface AppConfig {
   priceSources: PriceSource[] | undefined;
   profits: AuctionProfit[] | undefined;
   slackWebhook: string | undefined;
+  highBaseFee: number | undefined;
+  baseFee: number | undefined;
 }
 
 let APP_CONFIG: AppConfig;
@@ -96,7 +98,9 @@ export function validateAppConfig(config: any): boolean {
     (config.horizonURL !== undefined && typeof config.horizonURL !== 'string') ||
     (config.priceSources !== undefined && !Array.isArray(config.priceSources)) ||
     (config.profits !== undefined && !Array.isArray(config.profits)) ||
-    (config.slackWebhook !== undefined && typeof config.slackWebhook !== 'string')
+    (config.slackWebhook !== undefined && typeof config.slackWebhook !== 'string') ||
+    (config.highBaseFee !== undefined && typeof config.highBaseFee !== 'number') ||
+    (config.baseFee !== undefined && typeof config.baseFee !== 'number')
   ) {
     console.log('Invalid app config');
     return false;

@@ -193,6 +193,7 @@ export class WorkHandler {
             return;
           }
         }
+        break;
       }
       default:
         logger.error(`Unhandled event type: ${appEvent.type}`);

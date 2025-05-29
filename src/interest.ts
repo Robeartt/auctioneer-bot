@@ -13,6 +13,17 @@ export async function checkPoolForInterestAuction(
     const pool = await sorobanHelper.loadPool(poolId);
     const poolOracle = await sorobanHelper.loadPoolOracle(poolId);
 
+    // check if there is an existing interest auction
+    const interestAuction = await sorobanHelper.loadAuction(
+      poolId,
+      APP_CONFIG.backstopAddress,
+      AuctionType.Interest
+    );
+    if (interestAuction !== undefined) {
+      logger.info(`Interest auction already exists for pool ${poolId}`);
+      return undefined;
+    }
+
     // use the pools max auction lot size or at most 3 lot assets
     let maxLotAssets = Math.min(pool.metadata.maxPositions - 1, 3);
     let totalInterest = 0;

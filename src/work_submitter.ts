@@ -57,7 +57,9 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
 
   async submitAuction(sorobanHelper: SorobanHelper, auction: AuctionCreation): Promise<boolean> {
     try {
-      logger.info(`Creating liquidation for user: ${auction.user} in pool: ${auction.poolId}`);
+      logger.info(
+        `Creating auction ${auction.auctionType} for user: ${auction.user} in pool: ${auction.poolId}`
+      );
 
       const pool = new PoolContractV2(auction.poolId);
       const op = pool.newAuction({
@@ -69,11 +71,11 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
       });
 
       const auctionExists =
-        (await sorobanHelper.loadAuction(auction.poolId, auction.user, AuctionType.Liquidation)) !==
+        (await sorobanHelper.loadAuction(auction.poolId, auction.user, auction.auctionType)) !==
         undefined;
       if (auctionExists) {
         logger.info(
-          `User liquidation auction already exists for user: ${auction.user} in pool: ${auction.poolId}`
+          `Auction ${auction.auctionType} already exists for user: ${auction.user} in pool: ${auction.poolId}`
         );
         return true;
       }

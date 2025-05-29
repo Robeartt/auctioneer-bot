@@ -32,6 +32,49 @@ describe('validateAppConfig', () => {
     expect(validateAppConfig(invalidConfig)).toBe(false);
   });
 
+  it('should return false for non-number base fee', () => {
+    let invalidConfig = {
+      name: 'App',
+      rpcURL: 'http://localhost',
+      networkPassphrase: 'Test',
+      backstopAddress: 'backstop',
+      backstopTokenAddress: 'token',
+      usdcAddress: 'usdc',
+      blndAddress: 'blnd',
+      keypair: Keypair.random().secret(),
+      pools: ['pool'],
+      fillers: [
+        {
+          name: 'filler',
+          keypair: Keypair.random().secret(),
+          defaultProfitPct: 1,
+          supportedPools: [
+            {
+              poolAddress: 'pool',
+              primaryAsset: 'asset',
+              minPrimaryCollateral: '100',
+              minHealthFactor: 1,
+              forceFill: true,
+            },
+          ],
+          supportedBid: ['bid'],
+          supportedLot: ['lot'],
+        },
+      ],
+      priceSources: [{ assetId: 'asset', type: 'binance', symbol: 'symbol' }],
+      slackWebhook: 'http://webhook',
+      horizonURL: 'http://horizon',
+      highBaseFee: 10000,
+      baseFee: '5000',
+    };
+    expect(validateAppConfig(invalidConfig)).toBe(false);
+    // @ts-ignore
+    invalidConfig.baseFee = 5000; // Fixing the base fee type
+    // @ts-ignore
+    invalidConfig.highBaseFee = '10000'; // Fixing the high base fee type
+    expect(validateAppConfig(invalidConfig)).toBe(false);
+  });
+
   it('should return true for valid config', () => {
     const validConfig = {
       name: 'App',
@@ -64,6 +107,44 @@ describe('validateAppConfig', () => {
       priceSources: [{ assetId: 'asset', type: 'binance', symbol: 'symbol' }],
       slackWebhook: 'http://webhook',
       horizonURL: 'http://horizon',
+    };
+    expect(validateAppConfig(validConfig)).toBe(true);
+  });
+
+  it('should return true for valid config with base fees', () => {
+    const validConfig = {
+      name: 'App',
+      rpcURL: 'http://localhost',
+      networkPassphrase: 'Test',
+      backstopAddress: 'backstop',
+      backstopTokenAddress: 'token',
+      usdcAddress: 'usdc',
+      blndAddress: 'blnd',
+      keypair: Keypair.random().secret(),
+      pools: ['pool'],
+      fillers: [
+        {
+          name: 'filler',
+          keypair: Keypair.random().secret(),
+          defaultProfitPct: 1,
+          supportedPools: [
+            {
+              poolAddress: 'pool',
+              primaryAsset: 'asset',
+              minPrimaryCollateral: '100',
+              minHealthFactor: 1,
+              forceFill: true,
+            },
+          ],
+          supportedBid: ['bid'],
+          supportedLot: ['lot'],
+        },
+      ],
+      priceSources: [{ assetId: 'asset', type: 'binance', symbol: 'symbol' }],
+      slackWebhook: 'http://webhook',
+      horizonURL: 'http://horizon',
+      highBaseFee: 10000,
+      baseFee: 5000,
     };
     expect(validateAppConfig(validConfig)).toBe(true);
   });

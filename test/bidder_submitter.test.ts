@@ -108,8 +108,8 @@ describe('BidderSubmitter', () => {
     let auction_fill: AuctionFill = {
       percent: 50,
       block: 1000,
-      bidValue: 1234,
-      lotValue: 2345,
+      bidValue: 1.234,
+      lotValue: 2.345,
       requests: [
         {
           request_type: RequestType.FillUserLiquidationAuction,
@@ -177,6 +177,97 @@ describe('BidderSubmitter', () => {
       submission.auctionEntry.user_id,
       submission.auctionEntry.auction_type
     );
+    expect(mockedSorobanHelper.setFeeLevel).toHaveBeenCalledTimes(0);
+    expect(mockedSorobanHelper.submitTransaction).toHaveBeenCalled();
+    expect(mockDb.setFilledAuctionEntry).toHaveBeenCalledWith(expectedFillEntry);
+    expect(bidderSubmitter.addSubmission).toHaveBeenCalledWith(
+      { type: BidderSubmissionType.UNWIND, filler: submission.filler, poolId: mockPool.id },
+      2
+    );
+  });
+
+  it('should submit a high includsion fee bid with high profit', async () => {
+    bidderSubmitter.addSubmission = jest.fn();
+
+    let auction = new Auction(Keypair.random().publicKey(), AuctionType.Liquidation, {
+      bid: new Map<string, bigint>([['USD', BigInt(1000)]]),
+      lot: new Map<string, bigint>([['USD', BigInt(2000)]]),
+      block: 800,
+    });
+    mockedSorobanHelper.loadAuction.mockResolvedValue(auction);
+    let auction_fill: AuctionFill = {
+      percent: 50,
+      block: 1000,
+      bidValue: 12.34,
+      lotValue: 23.45,
+      requests: [
+        {
+          request_type: RequestType.FillUserLiquidationAuction,
+          address: auction.user,
+          amount: 50n,
+        },
+      ],
+    };
+    mockedCalcAuctionFill.mockResolvedValue(auction_fill);
+    let submissionResult: any = {
+      ledger: 1000,
+      txHash: 'mock-tx-hash',
+      latestLedgerCloseTime: Date.now(),
+    };
+    mockedSorobanHelper.submitTransaction.mockResolvedValue(submissionResult);
+
+    const filler: Filler = {
+      name: 'test-filler',
+      keypair: Keypair.random(),
+      defaultProfitPct: 0,
+      supportedPools: [
+        {
+          poolAddress: mockPool.id,
+          primaryAsset: 'USD',
+          minPrimaryCollateral: 100n,
+          minHealthFactor: 1,
+          forceFill: false,
+        },
+      ],
+      supportedBid: [],
+      supportedLot: [],
+    };
+    const submission: AuctionBid = {
+      type: BidderSubmissionType.BID,
+      filler,
+      auctionEntry: {
+        pool_id: mockPool.id,
+        user_id: auction.user,
+        auction_type: AuctionType.Liquidation,
+        filler: filler.keypair.publicKey(),
+        start_block: 900,
+        fill_block: 1000,
+      } as AuctionEntry,
+    };
+
+    const result = await bidderSubmitter.submit(submission);
+
+    const expectedFillEntry: FilledAuctionEntry = {
+      tx_hash: 'mock-tx-hash',
+      pool_id: mockPool.id,
+      filler: submission.auctionEntry.filler,
+      user_id: auction.user,
+      auction_type: submission.auctionEntry.auction_type,
+      bid: new Map<string, bigint>([['USD', BigInt(500)]]),
+      bid_total: auction_fill.bidValue,
+      lot: new Map<string, bigint>([['USD', BigInt(1000)]]),
+      lot_total: auction_fill.lotValue,
+      est_profit: auction_fill.lotValue - auction_fill.bidValue,
+      fill_block: submissionResult.ledger,
+      timestamp: submissionResult.latestLedgerCloseTime,
+    };
+    expect(result).toBe(true);
+    expect(mockedSorobanHelper.loadAuction).toHaveBeenCalledWith(
+      mockPool.id,
+      submission.auctionEntry.user_id,
+      submission.auctionEntry.auction_type
+    );
+    expect(mockedSorobanHelper.setFeeLevel).toHaveBeenCalledWith('high');
     expect(mockedSorobanHelper.submitTransaction).toHaveBeenCalled();
     expect(mockDb.setFilledAuctionEntry).toHaveBeenCalledWith(expectedFillEntry);
     expect(bidderSubmitter.addSubmission).toHaveBeenCalledWith(
