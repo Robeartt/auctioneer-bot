@@ -6,7 +6,7 @@ import { APP_CONFIG, Filler } from './utils/config.js';
 import { AuctioneerDatabase, AuctionEntry, AuctionType } from './utils/db.js';
 import { serializeError, stringify } from './utils/json.js';
 import { logger } from './utils/logger.js';
-import { sendSlackNotification } from './utils/slack_notifier.js';
+import { sendNotification } from './utils/notifier.js';
 import { SorobanHelper } from './utils/soroban_helper.js';
 import { SubmissionQueue } from './utils/submission_queue.js';
 
@@ -168,7 +168,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
           `Fill Percent ${fill.percent}\n` +
           `Ledger Fill Delta ${result.ledger - auctionBid.auctionEntry.start_block}\n` +
           `Hash ${result.txHash}\n`;
-        await sendSlackNotification(logMessage);
+        await sendNotification(logMessage);
         logger.info(logMessage);
         return true;
       } else {
@@ -190,7 +190,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         `User: ${auctionBid.auctionEntry.user_id}\n` +
         `Filler: ${auctionBid.filler.name}\n` +
         `Error: ${stringify(serializeError(e))}`;
-      await sendSlackNotification(`<!channel> ` + logMessage);
+      await sendNotification(`<!channel> ` + logMessage);
       logger.error(logMessage, e);
       return false;
     }
@@ -283,7 +283,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
           `Filler: ${fillerUnwind.filler.name}\n` +
           `Backstop Token Balance: ${tokenBalanceFloat}`;
         logger.info(logMessage);
-        await sendSlackNotification(logMessage);
+        await sendNotification(logMessage);
       }
     }
 
@@ -295,7 +295,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         `Pool: ${fillerUnwind.poolId}\n` +
         `Positions: ${stringify(filler_user.positions, 2)}`;
       logger.info(logMessage);
-      await sendSlackNotification(logMessage);
+      await sendNotification(logMessage);
       return true;
     }
 
@@ -373,6 +373,6 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         break;
     }
     logger.error(logMessage);
-    await sendSlackNotification(logMessage);
+    await sendNotification(logMessage);
   }
 }
