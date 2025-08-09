@@ -1,16 +1,17 @@
 import { APP_CONFIG } from './config.js';
 import { logger } from './logger.js';
 
-async function sendSlackNotification(message: string): Promise<void> {
+async function sendSlackNotification(message: string, tag: boolean = false): Promise<void> {
   try {
     if (APP_CONFIG.slackWebhook) {
+      const taggedMessage = tag ? `<!channel> ${message}` : message;
       const response = await fetch(APP_CONFIG.slackWebhook, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          text: `*Bot Name*: ${APP_CONFIG.name}\n${message}`,
+          text: `*Bot Name*: ${APP_CONFIG.name}\n${taggedMessage}`,
         }),
       });
       if (!response.ok) {
@@ -22,16 +23,17 @@ async function sendSlackNotification(message: string): Promise<void> {
   }
 }
 
-async function sendDiscordNotification(message: string): Promise<void> {
+async function sendDiscordNotification(message: string, tag: boolean = false): Promise<void> {
   try {
     if (APP_CONFIG.discordWebhook) {
+      const taggedMessage = tag ? `@everyone ${message}` : message;
       const response = await fetch(APP_CONFIG.discordWebhook, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          content: `**${APP_CONFIG.name}**\n${message}`,
+          content: `**${APP_CONFIG.name}**\n${taggedMessage}`,
         }),
       });
       if (!response.ok) {
@@ -43,7 +45,7 @@ async function sendDiscordNotification(message: string): Promise<void> {
   }
 }
 
-export async function sendNotification(message: string): Promise<void> {
+export async function sendNotification(message: string, tag: boolean = false): Promise<void> {
   // If no webhooks are configured, log to console as fallback
   if (!APP_CONFIG.slackWebhook && !APP_CONFIG.discordWebhook) {
     console.log(
@@ -56,11 +58,11 @@ export async function sendNotification(message: string): Promise<void> {
   const notifications = [];
 
   if (APP_CONFIG.slackWebhook) {
-    notifications.push(sendSlackNotification(message));
+    notifications.push(sendSlackNotification(message, tag));
   }
 
   if (APP_CONFIG.discordWebhook) {
-    notifications.push(sendDiscordNotification(message));
+    notifications.push(sendDiscordNotification(message, tag));
   }
 
   try {

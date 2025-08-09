@@ -174,10 +174,10 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       } else {
         logger.info(
           `Fill ledger not reached for auction bid\n` +
-            `Type: ${auctionBid.auctionEntry.auction_type}\n` +
-            `Pool: ${auctionBid.auctionEntry.pool_id}\n` +
-            `User: ${auctionBid.auctionEntry.user_id}\n` +
-            `Fill Ledger: ${fill.block} Next Ledger: ${nextLedger}`
+          `Type: ${auctionBid.auctionEntry.auction_type}\n` +
+          `Pool: ${auctionBid.auctionEntry.pool_id}\n` +
+          `User: ${auctionBid.auctionEntry.user_id}\n` +
+          `Fill Ledger: ${fill.block} Next Ledger: ${nextLedger}`
         );
       }
       // allow bidder handler to re-process the auction entry
@@ -190,7 +190,7 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
         `User: ${auctionBid.auctionEntry.user_id}\n` +
         `Filler: ${auctionBid.filler.name}\n` +
         `Error: ${stringify(serializeError(e))}`;
-      await sendNotification(`<!channel> ` + logMessage);
+      await sendNotification(logMessage, true);
       logger.error(logMessage, e);
       return false;
     }
@@ -257,9 +257,9 @@ export class BidderSubmitter extends SubmissionQueue<BidderSubmission> {
       );
       logger.info(
         `Successful unwind for filler: ${fillerUnwind.filler.name}\n` +
-          `Pool: ${fillerUnwind.poolId}\n` +
-          `Ledger: ${result.ledger}\n` +
-          `Hash: ${result.txHash}`
+        `Pool: ${fillerUnwind.poolId}\n` +
+        `Ledger: ${result.ledger}\n` +
+        `Hash: ${result.txHash}`
       );
       this.addSubmission(
         {

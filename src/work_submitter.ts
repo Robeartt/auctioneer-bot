@@ -103,7 +103,7 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
         `Lot: ${stringify(auction.lot)}\n` +
         `Error: ${stringify(serializeError(e))}\n`;
       logger.error(logMessage);
-      await sendNotification(`<!channel>\n` + logMessage);
+      await sendNotification(logMessage, true);
 
       // if pool throws a "LIQ_TOO_SMALL" or "LIQ_TOO_LARGE" error, adjust the fill percentage
       // by 1 percentage point before retrying.
@@ -143,7 +143,7 @@ export class WorkSubmitter extends SubmissionQueue<WorkSubmission> {
         `User: ${badDebtTransfer.user}` +
         `Error: ${stringify(serializeError(e))}\n`;
       logger.error(logMessage);
-      await sendNotification(`<!channel> ` + logMessage);
+      await sendNotification(logMessage, true);
       return false;
     }
   }
